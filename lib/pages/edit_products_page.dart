@@ -16,12 +16,19 @@ class EditProductsPage extends StatelessWidget {
     final appState = context.watch<AppState>();
     final products = appState.myProducts;
     final bool isHi = appState.selectedLang == 'Hindi';
-    final tts.FlutterTts _tts = tts.FlutterTts();
+    final tts.FlutterTts flutterTts = tts.FlutterTts();
 
 
     return Scaffold(
       appBar: AppBar(
         title: Text(isHi ? 'मेरे सामान' : 'My Products'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed: () => context.go(AppRoutes.home), // Straight to home
+            tooltip: isHi ? 'मुख्य पृष्ठ' : 'Home',
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -29,7 +36,7 @@ class EditProductsPage extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: AudioPrompt(
               onPlay: () {
-                _tts.speak(isHi ? "बदलाव के लिए सामान चुनें" : "Select a product to edit");
+                flutterTts.speak(isHi ? "बदलाव के लिए सामान चुनें" : "Select a product to edit");
               },
               text: isHi ? "बदलाव के लिए सामान चुनें" : "Select a product to edit",
             ),

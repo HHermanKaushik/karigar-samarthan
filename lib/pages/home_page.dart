@@ -123,49 +123,54 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
               const SizedBox(height: 32),
-              Expanded(
-                child: ListView(
-                  children: [
-                    ActionCard(
-                      icon: Icons.person_outline,
-                      label: isHi ? 'मेरा खाता' : 'Edit My Account',
-                      audioHint: isHi ? 'खाता' : 'Account',
-                      audioLabel: isHi ? 'खाते के लिए दबाएं' : 'Tap for account',
-                      onTap: () => _navigateTo(AppRoutes.account, isHi ? "आपका खाता" : "Opening account", currentLocale),
-                    ),
-                    ActionCard(
-                      icon: Icons.add_circle_outline,
-                      label: isHi ? 'नया उत्पाद जोड़ें' : 'Add New Product',
-                      audioHint: isHi ? 'खाता' : 'Account',
-                      audioLabel: isHi ? 'उत्पाद जोड़ने के लिए दबाएं' : 'Tap to add product',
-                      color: Theme.of(context).colorScheme.primary,
-                      onTap: () => _navigateTo(AppRoutes.addProduct, isHi ? "नया उत्पाद" : "Opening add product", currentLocale),
-                    ),
-                    ActionCard(
-                      icon: Icons.edit_note,
-                      label: isHi ? 'सामान की जानकारी बदलें' : 'Edit Products',
-                      audioHint: isHi ? 'खाता' : 'Account',
-                      audioLabel: isHi ? 'बदलाव के लिए दबाएं' : 'Tap to edit',
-                      onTap: () => _navigateTo(AppRoutes.editProducts, isHi ? "बदलाव करें" : "Opening editor", currentLocale),
-                    ),
-                    ActionCard(
-                      icon: Icons.shopping_bag_outlined,
-                      label: isHi ? 'आए हुए ऑर्डर' : 'My Orders',
-                      audioHint: isHi ? 'खाता' : 'Account',
-                      audioLabel: isHi ? 'ऑर्डर देखने के लिए दबाएं' : 'Tap for orders',
-                      onTap: () => _navigateTo(AppRoutes.myOrders, isHi ? "आपके आदेश" : "Opening orders", currentLocale),
-                    ),
-                    ActionCard(
-                      icon: Icons.help_outline_rounded,
-                      label: isHi ? 'मदद और निर्देश' : 'Help & Commands',
-                      audioHint: isHi ? 'मदद' : 'Help',
-                      audioLabel: isHi ? 'मदद के लिए दबाएं' : 'Tap for help',
-                      color: Colors.blueGrey,
-                      onTap: () => _showHelp(currentLocale),
-                    ),
-                  ],
-                ),
+            Expanded(
+              child: ListView(
+                children: [
+                  ActionCard(
+                    icon: Icons.person_outline,
+                    label: isHi ? 'मेरा खाता' : 'Edit My Account',
+                    audioHint: isHi ? 'खाता' : 'Account',
+                    // Updated: Tells the user WHAT to say
+                    audioLabel: isHi ? 'बोलिए: "प्रोफाइल" या "खाता"' : 'Say: "Profile" or "Account"',
+                    onTap: () => _navigateTo(AppRoutes.account, isHi ? "आपका खाता" : "Opening account", currentLocale),
+                  ),
+                  ActionCard(
+                    icon: Icons.add_circle_outline,
+                    label: isHi ? 'नया उत्पाद जोड़ें' : 'Add New Product',
+                    audioHint: isHi ? 'नया' : 'New',
+                    // Updated: Focuses on the "Add" action
+                    audioLabel: isHi ? 'बोलिए: "नया उत्पाद" या "जोड़ें"' : 'Say: "New Product" or "Add"',
+                    color: Theme.of(context).colorScheme.primary,
+                    onTap: () => _navigateTo(AppRoutes.addProduct, isHi ? "नया उत्पाद" : "Opening add product", currentLocale),
+                  ),
+                  ActionCard(
+                    icon: Icons.edit_note,
+                    label: isHi ? 'सामान की जानकारी बदलें' : 'Edit Products',
+                    audioHint: isHi ? 'बदलाव' : 'Edit',
+                    // Updated: Clear instructional hint
+                    audioLabel: isHi ? 'बोलिए: "बदलाव" या "सुधार"' : 'Say: "Edit" or "Change"',
+                    onTap: () => _navigateTo(AppRoutes.editProducts, isHi ? "बदलाव करें" : "Opening editor", currentLocale),
+                  ),
+                  ActionCard(
+                    icon: Icons.shopping_bag_outlined,
+                    label: isHi ? 'आए हुए ऑर्डर' : 'My Orders',
+                    audioHint: isHi ? 'ऑर्डर' : 'Orders',
+                    // Updated: Direct keyword hint
+                    audioLabel: isHi ? 'बोलिए: "ऑर्डर" या "आदेश"' : 'Say: "Orders" or "My Orders"',
+                    onTap: () => _navigateTo(AppRoutes.myOrders, isHi ? "आपके आदेश" : "Opening orders", currentLocale),
+                  ),
+                  ActionCard(
+                    icon: Icons.help_outline_rounded,
+                    label: isHi ? 'मदद और निर्देश' : 'Help & Commands',
+                    audioHint: isHi ? 'मदद' : 'Help',
+                    // Updated: Helping the user get help
+                    audioLabel: isHi ? 'बोलिए: "मदद"' : 'Say: "Help"',
+                    color: Colors.blueGrey,
+                    onTap: () => _showHelp(currentLocale),
+                  ),
+                ],
               ),
+            ),
               const SizedBox(height: 16),
               Center(
                 child: VoiceButton(
