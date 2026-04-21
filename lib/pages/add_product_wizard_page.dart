@@ -1,8 +1,22 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_tts/flutter_tts.dart' as tts;
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+
 import '../nav.dart';
-import '../components/voice_button.dart';
+import '../providers/app_state.dart';
 import '../components/audio_prompt.dart';
+import '../models/product.dart';
+
+// Steps & Service
+import 'ai_service.dart';
+import 'add_product_steps/PhotoInput.dart';
+import 'add_product_steps/NameInput.dart';
+import 'add_product_steps/CategoryInput.dart';
+import 'add_product_steps/DescInput.dart';
+import 'add_product_steps/NumericInput.dart';
 
 class AddProductWizardPage extends StatefulWidget {
   const AddProductWizardPage({super.key});
@@ -11,45 +25,77 @@ class AddProductWizardPage extends StatefulWidget {
   State<AddProductWizardPage> createState() => _AddProductWizardPageState();
 }
 
-class _AddProductWizardPageState extends State<AddProductWizardPage> {
-  int _currentStep = 0;
+class _AddProductWizardPageState extends State<AddProductWizardPage> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
   final PageController _pageController = PageController();
-
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  final tts.FlutterTts _tts = tts.FlutterTts();
+  
+  int _currentStep = 0;
+  bool _isListening = false;
+  String _activeField = "";
+  
   // Form Data
-  String _name = "";
-  String _category = "";
-  String _description = "";
-  String _price = "";
-  String _quantity = "";
-  bool _hasPhoto = false;
+  File? _imageFile;
+  String _name = "", _category = "", _description = "", _price = "", _quantity = "";
+  String? _aiSuggestedName, _aiSuggestedDescription, _aiSuggestedCategory;
+  bool _isAiDone = false;
+  Future<AiProductResult?>? _aiTask;
+
+  @override
+  void initState() {
+    super.initState();
+    _speech.initialize();
+    _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   void _nextStep() {
     if (_currentStep < 5) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-      setState(() {
-        _currentStep++;
-      });
+      _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      setState(() => _currentStep++);
     } else {
-      // Submit
-      context.pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product Added Successfully!')),
+      final draftProduct = Product(
+        id: DateTime.now().toString(),
+        name: _name,
+        category: _category,
+        description: _description,
+        price: double.tryParse(_price) ?? 0.0,
+        quantity: int.tryParse(_quantity) ?? 0,
+        imageFile: _imageFile,
       );
+      context.go(AppRoutes.productReview, extra: draftProduct);
     }
   }
 
-  void _prevStep() {
-    if (_currentStep > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-      setState(() {
-        _currentStep--;
-      });
+  void _listen(String fieldName) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    if (!_isListening) {
+      bool available = await _speech.initialize();
+      if (available) {
+        setState(() { _isListening = true; _activeField = fieldName; });
+        _speech.listen(
+          localeId: appState.locale,
+          onResult: (val) {
+            setState(() {
+              String text = val.recognizedWords;
+              if (fieldName == "name") _name = text;
+              if (fieldName == "description") _description = text;
+              if (fieldName == "price") _price = text.replaceAll(RegExp(r'[^0-9]'), '');
+              if (fieldName == "quantity") _quantity = text.replaceAll(RegExp(r'[^0-9]'), '');
+            });
+            if (val.finalResult) setState(() => _isListening = false);
+          },
+        );
+      }
+    } else {
+      setState(() => _isListening = false);
+      _speech.stop();
     }
   }
 
@@ -58,17 +104,12 @@ class _AddProductWizardPageState extends State<AddProductWizardPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Step ${_currentStep + 1} of 6'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (_currentStep > 0) {
-              _prevStep();
-            } else {
-              context.pop();
-            }
-          },
-        ),
-      ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home_rounded), // rounded looks a bit friendlier
+            onPressed: () => context.go(AppRoutes.home),
+          ),
+        ],),
       body: Column(
         children: [
           Expanded(
@@ -76,335 +117,165 @@ class _AddProductWizardPageState extends State<AddProductWizardPage> {
               controller: _pageController,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                _buildStep(
-                  title: "What is the name of your product?",
-                  audioText: "Say the product name",
-                  content: _buildNameInput(),
-                ),
-                _buildStep(
-                  title: "Select Category",
-                  audioText: "Choose a category",
-                  content: _buildCategoryInput(),
-                ),
-                _buildStep(
-                  title: "Describe your product",
-                  audioText: "Describe the product details",
-                  content: _buildDescriptionInput(),
-                  aiAction: "Improve Description",
-                ),
-                _buildStep(
-                  title: "Set Price (₹)",
-                  audioText: "Say the price in rupees",
-                  content: _buildPriceInput(),
-                  aiAction: "Suggest Better Price",
-                ),
-                _buildStep(
-                  title: "Quantity Available",
-                  audioText: "How many items do you have?",
-                  content: _buildQuantityInput(),
-                ),
-                _buildStep(
-                  title: "Add Product Photo",
-                  audioText: "Take a photo of your product",
-                  content: _buildPhotoInput(),
-                ),
+                _buildStep("Add Product Photo", "Take a photo of your product", _stepPhoto()),
+                _buildStep("Product Name", "Say the product name", _stepName()),
+                _buildStep("Category", "Choose a category", _stepCategory()),
+                _buildStep("Description", "Describe the product details", _stepDescription()),
+                _buildStep("Set Price", "Say the price in rupees", _stepPrice()),
+                _buildStep("Quantity", "How many items do you have?", _stepQuantity()),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (_currentStep < 5)
-                  TextButton(
-                    onPressed: () {
-                      // Skip logic if needed
-                      _nextStep();
-                    },
-                    child: const Text('Skip'),
-                  )
-                else
-                  const SizedBox(width: 60),
-
-                FloatingActionButton.extended(
-                  onPressed: _nextStep,
-                  label: Text(_currentStep == 5 ? 'Finish' : 'Next'),
-                  icon: Icon(
-                    _currentStep == 5 ? Icons.check : Icons.arrow_forward,
-                  ),
-                  backgroundColor: Theme.of(context).colorScheme.tertiary,
-                  foregroundColor: Theme.of(context).colorScheme.onTertiary,
-                ),
-              ],
-            ),
-          ),
+          _buildNavigation(),
         ],
       ),
     );
   }
 
-  Widget _buildStep({
-    required String title,
-    required String audioText,
-    required Widget content,
-    String? aiAction,
-  }) {
+  // --- Step Builders ---
+
+  Widget _stepPhoto() => PhotoInput(
+    imageFile: _imageFile,
+    onImagePicked: (file) {
+      setState(() { 
+        _imageFile = file; 
+        _isAiDone = false; 
+        _aiTask = AiService.processAndAnalyzeImage(file); 
+      });
+      _aiTask!.then((res) {
+        if (res != null && mounted) {
+          setState(() { 
+            _aiSuggestedName = res.title; 
+            _aiSuggestedDescription = res.description; 
+            _aiSuggestedCategory = res.category; 
+            _isAiDone = true; 
+          });
+        }
+      });
+      _nextStep();
+    },
+  );
+
+  Widget _stepName() => NameInput(
+    value: _name,
+    suggestion: _aiSuggestedName,
+    isListening: _isListening && _activeField == "name",
+    isAiThinking: !_isAiDone && _aiTask != null,
+    onChanged: (val) => setState(() => _name = val),
+    onListenTap: () => _listen("name"),
+    onAcceptSuggestion: () => setState(() { _name = _aiSuggestedName!; _aiSuggestedName = null; }),
+    onRejectSuggestion: () => setState(() => _aiSuggestedName = null),
+    aiThinkingWidget: _buildAiThinking,
+    suggestionWidget: _buildAiSuggestion,
+  );
+
+  Widget _stepCategory() => CategoryInput(
+    selectedCategory: _category,
+    onCategorySelected: (cat) => setState(() => _category = cat),
+  );
+
+  Widget _stepDescription() => DescInput(
+    value: _description,
+    suggestion: _aiSuggestedDescription,
+    isListening: _isListening && _activeField == "description",
+    isAiThinking: !_isAiDone && _aiTask != null,
+    onChanged: (val) => setState(() => _description = val),
+    onListenTap: () => _listen("description"),
+    onAcceptSuggestion: () => setState(() { _description = _aiSuggestedDescription!; _aiSuggestedDescription = null; }),
+    onRejectSuggestion: () => setState(() => _aiSuggestedDescription = null),
+    aiThinkingWidget: _buildAiThinking,
+    suggestionWidget: _buildAiSuggestion,
+  );
+
+  Widget _stepPrice() => NumericInput(
+    value: _price,
+    label: "Tap to Say Price",
+    prefix: "₹",
+    isListening: _isListening && _activeField == "price",
+    onListenTap: () => _listen("price"),
+    onChanged: (val) => setState(() => _price = val),
+  );
+
+  Widget _stepQuantity() => NumericInput(
+    value: _quantity,
+    label: "Tap to Say Quantity",
+    suffix: "units",
+    isListening: _isListening && _activeField == "quantity",
+    onListenTap: () => _listen("quantity"),
+    onChanged: (val) => setState(() => _quantity = val),
+  );
+
+  // --- UI Helpers (Reusable) ---
+
+  Widget _buildStep(String title, String audio, Widget content) {
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AudioPrompt(onPlay: () {}, text: audioText),
+          AudioPrompt(text: audio, onPlay: () => _tts.speak(audio)),
           const SizedBox(height: 24),
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
+          Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), textAlign: TextAlign.center),
           const SizedBox(height: 32),
           Expanded(child: content),
-          if (aiAction != null) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.secondary,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome,
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    aiAction,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.secondary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildNameInput() {
-    return Column(
-      children: [
-        VoiceButton(
-          onTap: () {
-            setState(() {
-              _name = "Handcrafted Clay Pot";
-            });
-          },
-          label: "Tap to Speak Name",
-        ),
-        const SizedBox(height: 24),
-        if (_name.isNotEmpty)
-          Text(
-            _name,
-            style: Theme.of(context).textTheme.headlineMedium,
-            textAlign: TextAlign.center,
+  Widget _buildNavigation() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _currentStep < 5 ? TextButton(onPressed: _nextStep, child: const Text('Skip')) : const SizedBox(width: 60),
+          FloatingActionButton.extended(
+            onPressed: _nextStep,
+            label: Text(_currentStep == 5 ? 'Finish' : 'Next'),
+            icon: Icon(_currentStep == 5 ? Icons.check : Icons.arrow_forward),
+            backgroundColor: Theme.of(context).colorScheme.tertiary,
           ),
-      ],
-    );
-  }
-
-  Widget _buildCategoryInput() {
-    final categories = [
-      {'icon': Icons.brush, 'label': 'Pottery'},
-      {'icon': Icons.checkroom, 'label': 'Textiles'},
-      {'icon': Icons.diamond, 'label': 'Jewelry'},
-      {'icon': Icons.chair, 'label': 'Woodwork'},
-    ];
-
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.2,
+        ],
       ),
-      itemCount: categories.length,
-      itemBuilder: (context, index) {
-        final cat = categories[index];
-        final isSelected = _category == cat['label'];
-        return InkWell(
-          onTap: () => setState(() => _category = cat['label'] as String),
-          child: Container(
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(
-                        context,
-                      ).colorScheme.outline.withValues(alpha: 0.2),
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  cat['icon'] as IconData,
-                  size: 32,
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  cat['label'] as String,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
-  Widget _buildDescriptionInput() {
-    return Column(
-      children: [
-        VoiceButton(
-          onTap: () {
-            setState(() {
-              _description =
-                  "Beautiful handmade clay pot with traditional Warli painting. Perfect for home decor.";
-            });
-          },
-          label: "Tap to Describe",
-        ),
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            _description.isEmpty
-                ? "Spoken description will appear here..."
-                : _description,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-        ),
-      ],
+  Widget _buildAiThinking(String label) {
+    return FadeTransition(
+      opacity: _pulseController,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.auto_awesome, size: 16),
+          const SizedBox(width: 8),
+          Text("AI is $label...", style: const TextStyle(fontStyle: FontStyle.italic)),
+        ],
+      ),
     );
   }
 
-  Widget _buildPriceInput() {
-    return Column(
-      children: [
-        VoiceButton(
-          onTap: () {
-            setState(() {
-              _price = "500";
-            });
-          },
-          label: "Tap to Say Price",
-        ),
-        const SizedBox(height: 24),
-        Text(
-          _price.isEmpty ? "₹ --" : "₹ $_price",
-          style: Theme.of(context).textTheme.displayMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildQuantityInput() {
-    return Column(
-      children: [
-        VoiceButton(
-          onTap: () {
-            setState(() {
-              _quantity = "10";
-            });
-          },
-          label: "Tap to Say Quantity",
-        ),
-        const SizedBox(height: 24),
-        Text(
-          _quantity.isEmpty ? "-- units" : "$_quantity units",
-          style: Theme.of(
-            context,
-          ).textTheme.displayMedium?.copyWith(fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPhotoInput() {
-    return Column(
-      children: [
-        Expanded(
-          child: GestureDetector(
-            onTap: () => setState(() => _hasPhoto = true),
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline,
-                  style: BorderStyle.solid,
-                ),
-                image: _hasPhoto
-                    ? const DecorationImage(
-                        image: AssetImage(
-                          'assets/images/Handmade_pottery_brown_1769327617453.jpg',
-                        ),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: _hasPhoto
-                  ? null
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.camera_alt,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          "Tap to Take Photo",
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ),
-      ],
+  Widget _buildAiSuggestion({required String suggestion, required VoidCallback onAccept, required VoidCallback onReject}) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer.withOpacity(0.4), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("AI Suggestion", style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(suggestion),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(onPressed: onReject, child: const Text("Discard")),
+              ElevatedButton(onPressed: onAccept, child: const Text("Accept")),
+            ],
+          )
+        ],
+      ),
     );
   }
 }

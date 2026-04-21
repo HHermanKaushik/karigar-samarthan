@@ -6,6 +6,7 @@ class ActionCard extends StatelessWidget {
   final String label;
   final Color? color;
   final String? audioHint;
+  final String? audioLabel;
 
   const ActionCard({
     super.key,
@@ -14,6 +15,7 @@ class ActionCard extends StatelessWidget {
     required this.label,
     this.color,
     this.audioHint,
+    this.audioLabel,
   });
 
   @override
@@ -75,7 +77,7 @@ class ActionCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            "Tap to hear",
+                            audioLabel ?? "Tap to hear",
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.secondary,
                             ),

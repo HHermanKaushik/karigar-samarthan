@@ -3,12 +3,17 @@
 .packages
 .pub-cache/
 build/
+.flutter-plugins-dependencies
+.metadata
+
+# .env
+.env
 
 # Android
-android/.gradle/
-android/local.properties
-android/key.properties
-*.jks
+android/.gradle
+.gradle/
+**/.gradle/
+**/android/.gradle/
 
 # iOS (even if not used yet)
 ios/Pods/
