@@ -2,8 +2,7 @@
 
 A **voice‑first Android Flutter application** designed to help Indian artisans (karigars) easily create, manage, and market product listings with **minimal typing, reduced navigation complexity, and assistive AI guidance**.
 
-This repository contains the **mobile layer** of the Karigar Samarthan system. The marketplace backend and seller dashboards are assumed to exist separately.
-
+This repository contains the **mobile layer** of the Karigar Samarthan system. The IVR Helpline, Volunteer-Entry fallback method, and any other supportive layers are organized within the "extra services" subdirectory.
 ---
 
 ## 🧭 Project Goals
