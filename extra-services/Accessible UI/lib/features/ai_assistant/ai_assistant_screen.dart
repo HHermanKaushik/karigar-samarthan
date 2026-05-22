@@ -236,8 +236,8 @@ class _Typing extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: List.generate(
             3,
-            (i) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
+            (i) => const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 2),
               child: CircleAvatar(
                 radius: 4,
                 backgroundColor: AppColors.textMuted,

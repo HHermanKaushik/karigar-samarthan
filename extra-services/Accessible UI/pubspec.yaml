@@ -1,4 +1,4 @@
-name: karigar_samarthan
+name: Karigar Samarthan
 description: Karigar Samarthan Seller App
 
 publish_to: 'none'
@@ -12,9 +12,8 @@ dependencies:
   flutter:
     sdk: flutter
 
-  intl: ^0.20.2
-
   cupertino_icons: ^1.0.8
+  intl: ^0.20.2
 
   flutter_riverpod: ^2.6.1
   riverpod: ^2.6.1
@@ -29,19 +28,19 @@ dependencies:
   shared_preferences: ^2.3.3
 
   image_picker: ^1.1.2
-
   permission_handler: ^12.0.0+1
 
   flutter_tts: ^4.2.0
   speech_to_text: ^7.3.0
-  firebase_core: ^4.8.0
 
-firebase_core: ^3.13.0
-firebase_auth: ^5.5.0
-cloud_firestore: ^5.6.7
-firebase_storage: ^12.4.5
-firebase_analytics: ^11.4.5
-firebase_crashlytics: ^4.3.5
+  firebase_core: ^3.13.0
+  firebase_auth: ^5.5.0
+  cloud_firestore: ^5.6.7
+  firebase_storage: ^12.4.5
+  firebase_analytics: ^11.4.5
+  firebase_crashlytics: ^4.3.5
+
+  google_generative_ai: ^0.4.7
 
 dev_dependencies:
   flutter_test:

@@ -12,12 +12,6 @@ import '../../providers/products_provider.dart';
 import '../../services/ai_assistant_service.dart';
 import '../../services/service_providers.dart';
 
-/// AI-assisted Add Product workflow:
-/// 1. take/add photos
-/// 2. speak about product
-/// 3. AI suggests fields
-/// 4. user reviews + edits
-/// 5. publish
 class AddProductFlow extends ConsumerStatefulWidget {
   const AddProductFlow({super.key});
 
@@ -28,16 +22,15 @@ class AddProductFlow extends ConsumerStatefulWidget {
 class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   int _step = 0;
 
-  // MULTIPLE IMAGES
   final List<String> _imagePaths = [];
 
   String _voiceTranscript = '';
+
   bool _listening = false;
   bool _processing = false;
 
   AiProductSuggestion? _suggestion;
 
-  // EDITABLE CONTROLLERS
   final _title = TextEditingController();
   final _category = TextEditingController();
   final _description = TextEditingController();
@@ -55,10 +48,13 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     super.dispose();
   }
 
-  // =========================
+  // =========================================================
   // IMAGE PICKER
-  // =========================
-  Future<void> _takePhoto({required ImageSource source}) async {
+  // =========================================================
+
+  Future<void> _takePhoto({
+    required ImageSource source,
+  }) async {
     try {
       final picker = ImagePicker();
 
@@ -72,7 +68,7 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
           _imagePaths.add(x.path);
         });
       }
-    } catch (_) {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Could not open image picker'),
@@ -87,83 +83,194 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     });
   }
 
-  // =========================
-  // VOICE INPUT
-  // =========================
+  // =========================================================
+  // VOICE
+  // =========================================================
+
   Future<void> _toggleVoice() async {
     final stt = ref.read(speechToTextProvider);
 
     if (_listening) {
       await stt.stop();
-      setState(() => _listening = false);
+
+      setState(() {
+        _listening = false;
+      });
+
       return;
     }
 
     final ok = await stt.initialize();
 
     if (!ok) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Microphone unavailable'),
         ),
       );
+
       return;
     }
 
-    setState(() => _listening = true);
-
-    stt.listen(onResult: (r) {
-      setState(() {
-        _voiceTranscript = r.recognizedWords;
-      });
+    setState(() {
+      _listening = true;
     });
+
+    stt.listen(
+      onResult: (r) {
+        setState(() {
+          _voiceTranscript = r.recognizedWords;
+        });
+      },
+    );
   }
 
-  Future<void> _listenToNumber(TextEditingController controller) async {
+  Future<void> _listenToNumber(
+    TextEditingController controller,
+  ) async {
     final stt = ref.read(speechToTextProvider);
 
     final ok = await stt.initialize();
 
     if (!ok) return;
 
-    stt.listen(onResult: (r) {
-      setState(() {
-        controller.text = r.recognizedWords.replaceAll(RegExp(r'[^0-9]'), '');
-      });
-    });
-  }
-
-  // =========================
-  // AI
-  // =========================
-  Future<void> _runAi() async {
-    setState(() => _processing = true);
-
-    final ai = ref.read(aiAssistantServiceProvider);
-    final lang = ref.read(languageProvider).code;
-
-    final s = await ai.analyzeProduct(
-      imagePaths: _imagePaths,
-      voiceTranscript: _voiceTranscript,
-      languageCode: lang,
+    stt.listen(
+      onResult: (r) {
+        setState(() {
+          controller.text = r.recognizedWords.replaceAll(
+            RegExp(r'[^0-9]'),
+            '',
+          );
+        });
+      },
     );
-
-    // PREFILL EDITABLE FIELDS
-    _title.text = s.title;
-    _category.text = s.category;
-    _description.text = s.description;
-
-    setState(() {
-      _suggestion = s;
-      _processing = false;
-      _step = 3;
-    });
   }
 
-  // =========================
+  // =========================================================
+  // AI
+  // =========================================================
+
+  Future<void> _runAi() async {
+    setState(() {
+      _processing = true;
+    });
+
+    try {
+      final ai = ref.read(aiAssistantServiceProvider);
+
+      final lang = ref.read(languageProvider).code;
+
+      final s = await ai.analyzeProduct(
+        imagePaths: _imagePaths,
+        voiceTranscript: _voiceTranscript,
+        languageCode: lang,
+      );
+
+      final cleanedTitle = _cleanAiTitle(s.title);
+
+      _title.text = cleanedTitle;
+      _category.text = s.category;
+      _description.text = s.description;
+
+      setState(() {
+        _suggestion = s;
+        _processing = false;
+        _step = 3;
+      });
+    } catch (e) {
+      setState(() {
+        _processing = false;
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'AI failed: $e',
+          ),
+        ),
+      );
+
+      setState(() {
+        _step = 1;
+      });
+    }
+  }
+
+  String _cleanAiTitle(String raw) {
+    String t = raw.trim();
+
+    final badPrefixes = [
+      'here is',
+      'here’s',
+      'here are',
+      'analysis',
+      'product analysis',
+      'the analysis',
+      'ai analysis',
+      'here is the analysis',
+      'here is the analysis of the artisan product',
+    ];
+
+    for (final p in badPrefixes) {
+      if (t.toLowerCase().startsWith(p)) {
+        t = 'Handmade Artisan Product';
+      }
+    }
+
+    t = t.replaceAll('"', '');
+
+    if (t.length > 80) {
+      t = t.substring(0, 80);
+    }
+
+    if (t.isEmpty) {
+      t = 'Handmade Artisan Product';
+    }
+
+    return t;
+  }
+
+  // =========================================================
   // PUBLISH
-  // =========================
-  void _publish() {
+  // =========================================================
+
+  Future<void> _publish() async {
+    if (_processing) return;
+
+    if (_title.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter product title'),
+        ),
+      );
+
+      return;
+    }
+
+    if (_price.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter price'),
+        ),
+      );
+
+      return;
+    }
+
+    if (_imagePaths.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please add at least one image'),
+        ),
+      );
+
+      return;
+    }
+
     final price = double.tryParse(_price.text.trim()) ?? 0;
 
     final qty = int.tryParse(_qty.text.trim()) ?? 0;
@@ -179,43 +286,107 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
       tags: _suggestion?.tags ?? [],
     );
 
-    ref.read(productsProvider.notifier).add(product);
+    setState(() {
+      _processing = true;
+    });
 
-    Navigator.of(context).pop();
+    try {
+      ref.read(productsProvider.notifier).add(product);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${_title.text} added to your store'),
-      ),
-    );
+      final woo = ref.read(wooServiceProvider);
+
+      final success = await woo.publishProduct(
+        title: _title.text.trim(),
+        description: _description.text.trim(),
+        price: _price.text.trim(),
+        imageFile: File(_imagePaths.first),
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Product published successfully',
+            ),
+          ),
+        );
+
+        Navigator.of(context).pop();
+
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'WooCommerce publish failed',
+          ),
+        ),
+      );
+    } catch (e) {
+      print('========== WOO ERROR ==========');
+      print(e);
+      print('================================');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Publish failed: $e',
+          ),
+        ),
+      );
+    }
+
+    if (mounted) {
+      setState(() {
+        _processing = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: switch (_step) {
-        0 => _stepPhoto(),
-        1 => _stepVoice(),
-        2 => _stepProcessing(),
-        _ => _stepReview(),
-      },
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20,
+          ),
+          child: switch (_step) {
+            0 => _stepPhoto(),
+            1 => _stepVoice(),
+            2 => _stepProcessing(),
+            _ => _stepReview(),
+          },
+        ),
+      ),
     );
   }
 
-  // =========================
+  // =========================================================
   // STEP 1
-  // =========================
+  // =========================================================
+
   Widget _stepPhoto() {
     return Column(
       children: [
-        const _Header(title: 'Add Product Photos'),
+        const _Header(
+          title: 'Add Product Photos',
+        ),
         const SizedBox(height: 12),
         Expanded(
           child: Center(
             child: Container(
               width: double.infinity,
-              margin: const EdgeInsets.symmetric(vertical: 12),
+              margin: const EdgeInsets.symmetric(
+                vertical: 12,
+              ),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: AppColors.surface,
@@ -227,7 +398,9 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
               ),
               child: _imagePaths.isEmpty
                   ? GestureDetector(
-                      onTap: () => _takePhoto(source: ImageSource.camera),
+                      onTap: () => _takePhoto(
+                        source: ImageSource.camera,
+                      ),
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -258,11 +431,17 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                                 children: [
                                   Container(
                                     width: 220,
-                                    margin: const EdgeInsets.only(right: 12),
+                                    margin: const EdgeInsets.only(
+                                      right: 12,
+                                    ),
                                     child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(
+                                        14,
+                                      ),
                                       child: Image.file(
-                                        File(_imagePaths[i]),
+                                        File(
+                                          _imagePaths[i],
+                                        ),
                                         fit: BoxFit.cover,
                                       ),
                                     ),
@@ -290,44 +469,55 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                         ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
-                          onPressed: () =>
-                              _takePhoto(source: ImageSource.gallery),
+                          onPressed: () => _takePhoto(
+                            source: ImageSource.gallery,
+                          ),
                           icon: const Icon(Icons.add),
-                          label: const Text('Add More Photos'),
+                          label: const Text(
+                            'Add More Photos',
+                          ),
                         ),
                       ],
                     ),
             ),
           ),
         ),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _takePhoto(source: ImageSource.gallery),
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('Gallery'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () => setState(() => _step = 1),
-                child: Text(
-                  _imagePaths.isEmpty ? 'Skip' : 'Next',
+        SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(0, 12, 0, 28),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _takePhoto(
+                    source: ImageSource.gallery,
+                  ),
+                  icon: const Icon(
+                    Icons.photo_library_outlined,
+                  ),
+                  label: const Text('Gallery'),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => setState(() => _step = 1),
+                  child: Text(
+                    _imagePaths.isEmpty ? 'Skip' : 'Next',
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
       ],
     );
   }
 
-  // =========================
+  // =========================================================
   // STEP 2
-  // =========================
+  // =========================================================
+
   Widget _stepVoice() {
     return Column(
       children: [
@@ -386,34 +576,41 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => setState(() => _step = 0),
-                child: const Text('Back'),
+        SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(0, 12, 0, 28),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _step = 0),
+                  child: const Text('Back'),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  setState(() => _step = 2);
-                  _runAi();
-                },
-                child: const Text('Next'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _step = 2;
+                    });
+
+                    _runAi();
+                  },
+                  child: const Text('Next'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
       ],
     );
   }
 
-  // =========================
+  // =========================================================
   // STEP 3
-  // =========================
+  // =========================================================
+
   Widget _stepProcessing() {
     return const Center(
       child: Column(
@@ -435,13 +632,16 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     );
   }
 
-  // =========================
+  // =========================================================
   // STEP 4
-  // =========================
+  // =========================================================
+
   Widget _stepReview() {
     return Column(
       children: [
-        const _Header(title: 'Final Review'),
+        const _Header(
+          title: 'Final Review',
+        ),
         Expanded(
           child: SingleChildScrollView(
             child: Column(
@@ -455,11 +655,15 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                       itemCount: _imagePaths.length,
                       itemBuilder: (_, i) {
                         return Padding(
-                          padding: const EdgeInsets.only(right: 12),
+                          padding: const EdgeInsets.only(
+                            right: 12,
+                          ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(16),
                             child: Image.file(
-                              File(_imagePaths[i]),
+                              File(
+                                _imagePaths[i],
+                              ),
                               width: 220,
                               fit: BoxFit.cover,
                             ),
@@ -498,19 +702,42 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
             ),
           ),
         ),
-        ElevatedButton(
-          onPressed: _publish,
-          child: const Text('Finish'),
+        SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(0, 12, 0, 28),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _processing ? null : _publish,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                ),
+                child: _processing
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Publish Product',
+                      ),
+              ),
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
       ],
     );
   }
 }
 
-// =========================
+// =========================================================
 // HEADER
-// =========================
+// =========================================================
+
 class _Header extends StatelessWidget {
   final String title;
 
@@ -540,14 +767,19 @@ class _Header extends StatelessWidget {
   }
 }
 
-// =========================
+// =========================================================
 // FIELD
-// =========================
+// =========================================================
+
 class _LabelField extends StatelessWidget {
   final String label;
+
   final TextEditingController controller;
+
   final bool number;
+
   final int maxLines;
+
   final VoidCallback? onMic;
 
   const _LabelField({
@@ -566,7 +798,10 @@ class _LabelField extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            padding: const EdgeInsets.only(
+              left: 4,
+              bottom: 6,
+            ),
             child: Text(
               label,
               style: const TextStyle(

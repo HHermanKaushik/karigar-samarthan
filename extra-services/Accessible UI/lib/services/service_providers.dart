@@ -6,13 +6,17 @@ import 'ai_assistant_service.dart';
 import 'woocommerce_service.dart';
 
 final aiAssistantServiceProvider = Provider<AiAssistantService>((ref) {
-  return StubAiAssistantService();
+  return GeminiAiAssistantService();
 });
 
-final wooServiceProvider =
-    Provider<WooCommerceService>((ref) => WooCommerceService());
+final wooServiceProvider = Provider<WooCommerceService>((ref) {
+  return WooCommerceService();
+});
 
-final speechToTextProvider =
-    Provider<stt.SpeechToText>((ref) => stt.SpeechToText());
+final speechToTextProvider = Provider<stt.SpeechToText>((ref) {
+  return stt.SpeechToText();
+});
 
-final flutterTtsProvider = Provider<FlutterTts>((ref) => FlutterTts());
+final flutterTtsProvider = Provider<FlutterTts>((ref) {
+  return FlutterTts();
+});

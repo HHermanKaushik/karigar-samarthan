@@ -27,10 +27,7 @@ class ProfileScreen extends ConsumerWidget {
               const Expanded(
                 child: Text(
                   'My Account',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
@@ -171,7 +168,6 @@ class _PopupLanguageCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _PopupLanguageCard({
-    super.key,
     required this.lang,
     required this.active,
     required this.onTap,
@@ -248,11 +244,7 @@ class _Row extends StatelessWidget {
   final String label;
   final String value;
 
-  const _Row({
-    super.key,
-    required this.label,
-    required this.value,
-  });
+  const _Row({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
