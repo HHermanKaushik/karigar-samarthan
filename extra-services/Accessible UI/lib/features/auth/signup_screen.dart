@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
+import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
@@ -42,6 +43,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tr = ref.watch(trProvider);
     return Scaffold(
       appBar: AppBar(leading: BackButton(onPressed: () => context.go('/'))),
       body: SafeArea(
@@ -53,34 +55,35 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               const Center(child: AppLogo(size: 80)),
               const SizedBox(height: 24),
               Text(
-                'Create Your Account',
+                tr('createAccount'),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
               ),
               const SizedBox(height: 28),
-              _Field(label: 'Full Name', controller: _name),
-              _Field(label: 'Store Name', controller: _store),
+              _Field(label: tr('fullName'), controller: _name),
+              _Field(label: tr('storeName'), controller: _store),
               _Field(
-                label: 'Phone Number',
+                label: tr('phoneNumber'),
                 controller: _phone,
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 8),
-              ElevatedButton(onPressed: _submit, child: const Text('Sign Up')),
+              ElevatedButton(
+                  onPressed: _submit, child: Text(tr('signUp'))),
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
                   onPressed: () => context.go('/login'),
                   child: RichText(
-                    text: const TextSpan(
-                      style: TextStyle(color: AppColors.textMuted),
+                    text: TextSpan(
+                      style: const TextStyle(color: AppColors.textMuted),
                       children: [
-                        TextSpan(text: 'Already have an account? '),
+                        TextSpan(text: tr('alreadyAccount')),
                         TextSpan(
-                          text: 'Log In',
-                          style: TextStyle(
+                          text: tr('logIn'),
+                          style: const TextStyle(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w600,
                           ),

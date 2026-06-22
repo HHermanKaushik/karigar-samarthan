@@ -16,4 +16,20 @@ enum AppLanguage {
       orElse: () => AppLanguage.english,
     );
   }
+
+  /// BCP-47 language code used by Sarvam AI's STT / TTS / Translation APIs.
+  String get sarvamCode {
+    switch (this) {
+      case AppLanguage.english:
+        return 'en-IN';
+      case AppLanguage.hindi:
+        return 'hi-IN';
+      case AppLanguage.marathi:
+        return 'mr-IN';
+      case AppLanguage.bengali:
+        return 'bn-IN';
+      case AppLanguage.tamil:
+        return 'ta-IN';
+    }
+  }
 }

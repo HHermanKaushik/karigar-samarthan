@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,8 +7,10 @@ import '../../core/theme/app_colors.dart';
 import '../../models/app_language.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../providers/orders_provider.dart';
+import '../../providers/products_provider.dart';
+import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -16,6 +19,7 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(userProvider);
     final lang = ref.watch(languageProvider);
+    final tr = ref.watch(trProvider);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -24,10 +28,11 @@ class ProfileScreen extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'My Account',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                  tr('myAccount'),
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
@@ -42,55 +47,57 @@ class ProfileScreen extends ConsumerWidget {
               children: [
                 CircleAvatar(
                   radius: 56,
-                  backgroundColor: AppColors.primary.withOpacity(0.15),
-                  child: const Icon(
-                    Icons.person,
-                    size: 56,
-                    color: AppColors.primary,
-                  ),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                  child: const Icon(Icons.person,
+                      size: 56, color: AppColors.primary),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  user.fullName,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  user.role,
-                  style: const TextStyle(color: AppColors.textMuted),
-                ),
+                Text(user.fullName,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w700)),
+                Text(user.role,
+                    style: const TextStyle(color: AppColors.textMuted)),
               ],
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'DETAILS',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-            ),
+          Text(
+            tr('details'),
+            style: const TextStyle(
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6),
           ),
           const SizedBox(height: 8),
-          _Row(label: 'Name', value: user.fullName),
-          _Row(label: 'Store', value: user.storeName),
-          _Row(label: 'Phone', value: user.phone),
-          _Row(label: 'Language', value: lang.englishName),
+          _Row(label: tr('name'), value: user.fullName),
+          _Row(label: tr('store'), value: user.storeName),
+          _Row(label: tr('phone'), value: user.phone),
+          _Row(label: tr('language'), value: lang.englishName),
           _Row(
-            label: 'Payment Setup',
-            value: user.paymentSetup ? 'Active (UPI/Bank)' : 'Not set',
+            label: tr('paymentSetup'),
+            value: user.paymentSetup
+                ? tr('paymentActive')
+                : tr('paymentNotSet'),
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
-            onPressed: () => _changeLanguage(context, ref),
+            onPressed: () => _changeLanguage(context, ref, tr),
             icon: const Icon(Icons.translate),
-            label: const Text('Change language'),
+            label: Text(tr('changeLanguage')),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () async {
+              // Sign out the phone-auth user, then re-auth anonymously for
+              // Storage/Firestore writes before the next phone login.
+              await FirebaseAuth.instance.signOut();
+              try {
+                await FirebaseAuth.instance.signInAnonymously();
+              } catch (_) {}
+              // Clear per-user cached data so the next user starts fresh.
+              ref.invalidate(productsProvider);
+              ref.invalidate(ordersProvider);
+              await ref.read(userProvider.notifier).clear();
               await ref.read(onboardingProvider.notifier).reset();
               if (context.mounted) {
                 Navigator.of(context).pop();
@@ -98,14 +105,15 @@ class ProfileScreen extends ConsumerWidget {
               }
             },
             icon: const Icon(Icons.logout),
-            label: const Text('Log out'),
+            label: Text(tr('logOut')),
           ),
         ],
       ),
     );
   }
 
-  void _changeLanguage(BuildContext context, WidgetRef ref) {
+  void _changeLanguage(
+      BuildContext context, WidgetRef ref, String Function(String) tr) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -113,7 +121,7 @@ class ProfileScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        final selected = ref.watch(languageProvider);
+        final selected = ref.read(languageProvider);
 
         return SafeArea(
           child: Padding(
@@ -122,7 +130,6 @@ class ProfileScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: AppLanguage.values.map((l) {
                 final isActive = l == selected;
-
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _PopupLanguageCard(
@@ -143,25 +150,6 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-/// =======================
-/// PROFILE TTS (local)
-/// =======================
-class _ProfileTTS {
-  static final FlutterTts _tts = FlutterTts();
-
-  static Future<void> speak({
-    required String text,
-    required String languageCode,
-  }) async {
-    await _tts.setLanguage(languageCode);
-    await _tts.setSpeechRate(0.45);
-    await _tts.speak(text);
-  }
-}
-
-/// =======================
-/// POPUP LANGUAGE CARD
-/// =======================
 class _PopupLanguageCard extends StatelessWidget {
   final AppLanguage lang;
   final bool active;
@@ -189,7 +177,8 @@ class _PopupLanguageCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(active ? 0.25 : 0.9),
+                  color: Colors.white
+                      .withValues(alpha: active ? 0.25 : 0.9),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -210,17 +199,17 @@ class _PopupLanguageCard extends StatelessWidget {
                     Text(
                       lang.nativeName,
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: active ? Colors.white : AppColors.text,
-                      ),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: active ? Colors.white : AppColors.text),
                     ),
                     Text(
                       lang.englishName,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: active ? Colors.white70 : AppColors.textMuted,
-                      ),
+                          fontSize: 12,
+                          color: active
+                              ? Colors.white70
+                              : AppColors.textMuted),
                     ),
                   ],
                 ),
@@ -237,9 +226,6 @@ class _PopupLanguageCard extends StatelessWidget {
   }
 }
 
-/// =======================
-/// ROW WIDGET
-/// =======================
 class _Row extends StatelessWidget {
   final String label;
   final String value;
@@ -254,19 +240,14 @@ class _Row extends StatelessWidget {
         children: [
           SizedBox(
             width: 130,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: Text(label,
+                style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontWeight: FontWeight.w600)),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+            child: Text(value,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),

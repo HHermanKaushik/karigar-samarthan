@@ -56,8 +56,6 @@ class AppTheme {
     );
 
     return base.copyWith(
-      useMaterial3: true,
-
       scaffoldBackgroundColor: AppColors.background,
 
       colorScheme: base.colorScheme.copyWith(

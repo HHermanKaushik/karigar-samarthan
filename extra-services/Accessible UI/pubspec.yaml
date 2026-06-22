@@ -1,4 +1,4 @@
-name: Karigar Samarthan
+name: karigar_samarthan
 description: Karigar Samarthan Seller App
 
 publish_to: 'none'
@@ -32,6 +32,17 @@ dependencies:
 
   flutter_tts: ^4.2.0
   speech_to_text: ^7.3.0
+
+  # Sarvam AI voice I/O
+  flutter_sound: ^9.18.0
+  audioplayers: ^6.1.0
+  path_provider: ^2.1.5
+
+  # Connectivity check
+  connectivity_plus: ^6.1.0
+
+  # Call support button
+  url_launcher: ^6.3.1
 
   firebase_core: ^3.13.0
   firebase_auth: ^5.5.0

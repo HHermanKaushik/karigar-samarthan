@@ -9,6 +9,7 @@ import '../../core/widgets/voice_button.dart';
 import '../../models/product.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../providers/translations_provider.dart';
 import '../../services/ai_assistant_service.dart';
 import '../../services/service_providers.dart';
 
@@ -23,18 +24,14 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   int _step = 0;
 
   final List<String> _imagePaths = [];
-
   String _voiceTranscript = '';
-
   bool _listening = false;
   bool _processing = false;
-
   AiProductSuggestion? _suggestion;
 
   final _title = TextEditingController();
   final _category = TextEditingController();
   final _description = TextEditingController();
-
   final _price = TextEditingController();
   final _qty = TextEditingController();
 
@@ -48,233 +45,124 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     super.dispose();
   }
 
-  // =========================================================
-  // IMAGE PICKER
-  // =========================================================
+  // ── IMAGE PICKER ──────────────────────────────────────────────────────
 
-  Future<void> _takePhoto({
-    required ImageSource source,
-  }) async {
+  Future<void> _takePhoto({required ImageSource source}) async {
     try {
       final picker = ImagePicker();
-
-      final x = await picker.pickImage(
-        source: source,
-        imageQuality: 80,
-      );
-
-      if (x != null) {
-        setState(() {
-          _imagePaths.add(x.path);
-        });
-      }
+      final x = await picker.pickImage(source: source, imageQuality: 80);
+      if (x != null) setState(() => _imagePaths.add(x.path));
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open image picker'),
-        ),
-      );
+          const SnackBar(content: Text('Could not open image picker')));
     }
   }
 
-  void _removeImage(int index) {
-    setState(() {
-      _imagePaths.removeAt(index);
-    });
-  }
+  void _removeImage(int index) => setState(() => _imagePaths.removeAt(index));
 
-  // =========================================================
-  // VOICE
-  // =========================================================
+  // ── VOICE ─────────────────────────────────────────────────────────────
 
   Future<void> _toggleVoice() async {
     final stt = ref.read(speechToTextProvider);
 
     if (_listening) {
       await stt.stop();
-
-      setState(() {
-        _listening = false;
-      });
-
+      setState(() => _listening = false);
       return;
     }
 
     final ok = await stt.initialize();
-
     if (!ok) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Microphone unavailable'),
-        ),
-      );
-
+          const SnackBar(content: Text('Microphone unavailable')));
       return;
     }
 
-    setState(() {
-      _listening = true;
-    });
-
+    setState(() => _listening = true);
     stt.listen(
-      onResult: (r) {
-        setState(() {
-          _voiceTranscript = r.recognizedWords;
-        });
-      },
-    );
+        onResult: (r) =>
+            setState(() => _voiceTranscript = r.recognizedWords));
   }
 
-  Future<void> _listenToNumber(
-    TextEditingController controller,
-  ) async {
+  Future<void> _listenToNumber(TextEditingController controller) async {
     final stt = ref.read(speechToTextProvider);
-
     final ok = await stt.initialize();
-
     if (!ok) return;
-
     stt.listen(
-      onResult: (r) {
-        setState(() {
-          controller.text = r.recognizedWords.replaceAll(
-            RegExp(r'[^0-9]'),
-            '',
-          );
-        });
-      },
-    );
+        onResult: (r) => setState(() => controller.text =
+            r.recognizedWords.replaceAll(RegExp(r'[^0-9]'), '')));
   }
 
-  // =========================================================
-  // AI
-  // =========================================================
+  // ── AI ────────────────────────────────────────────────────────────────
 
   Future<void> _runAi() async {
-    setState(() {
-      _processing = true;
-    });
-
+    setState(() => _processing = true);
     try {
       final ai = ref.read(aiAssistantServiceProvider);
-
       final lang = ref.read(languageProvider).code;
-
       final s = await ai.analyzeProduct(
         imagePaths: _imagePaths,
         voiceTranscript: _voiceTranscript,
         languageCode: lang,
       );
-
-      final cleanedTitle = _cleanAiTitle(s.title);
-
-      _title.text = cleanedTitle;
+      _title.text = _cleanAiTitle(s.title);
       _category.text = s.category;
       _description.text = s.description;
-
       setState(() {
         _suggestion = s;
         _processing = false;
         _step = 3;
       });
     } catch (e) {
-      setState(() {
-        _processing = false;
-      });
-
+      setState(() => _processing = false);
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'AI failed: $e',
-          ),
-        ),
-      );
-
-      setState(() {
-        _step = 1;
-      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('AI failed: $e')));
+      setState(() => _step = 1);
     }
   }
 
   String _cleanAiTitle(String raw) {
     String t = raw.trim();
-
-    final badPrefixes = [
-      'here is',
-      'here’s',
-      'here are',
-      'analysis',
-      'product analysis',
-      'the analysis',
-      'ai analysis',
-      'here is the analysis',
+    const badPrefixes = [
+      'here is', "here's", 'here are', 'analysis', 'product analysis',
+      'the analysis', 'ai analysis', 'here is the analysis',
       'here is the analysis of the artisan product',
     ];
-
     for (final p in badPrefixes) {
-      if (t.toLowerCase().startsWith(p)) {
-        t = 'Handmade Artisan Product';
-      }
+      if (t.toLowerCase().startsWith(p)) t = 'Handmade Artisan Product';
     }
-
     t = t.replaceAll('"', '');
-
-    if (t.length > 80) {
-      t = t.substring(0, 80);
-    }
-
-    if (t.isEmpty) {
-      t = 'Handmade Artisan Product';
-    }
-
+    if (t.length > 80) t = t.substring(0, 80);
+    if (t.isEmpty) t = 'Handmade Artisan Product';
     return t;
   }
 
-  // =========================================================
-  // PUBLISH
-  // =========================================================
+  // ── PUBLISH ───────────────────────────────────────────────────────────
 
   Future<void> _publish() async {
     if (_processing) return;
 
     if (_title.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter product title'),
-        ),
-      );
-
+          const SnackBar(content: Text('Please enter product title')));
       return;
     }
-
     if (_price.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter price'),
-        ),
-      );
-
+          const SnackBar(content: Text('Please enter price')));
       return;
     }
-
     if (_imagePaths.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please add at least one image'),
-        ),
-      );
-
+          const SnackBar(content: Text('Please add at least one image')));
       return;
     }
 
     final price = double.tryParse(_price.text.trim()) ?? 0;
-
     final qty = int.tryParse(_qty.text.trim()) ?? 0;
-
     final product = Product(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       title: _title.text.trim(),
@@ -286,16 +174,12 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
       tags: _suggestion?.tags ?? [],
     );
 
-    setState(() {
-      _processing = true;
-    });
+    setState(() => _processing = true);
 
     try {
       ref.read(productsProvider.notifier).add(product);
-
       final woo = ref.read(wooServiceProvider);
-
-      final success = await woo.publishProduct(
+      final result = await woo.publishProduct(
         title: _title.text.trim(),
         description: _description.text.trim(),
         price: _price.text.trim(),
@@ -304,49 +188,30 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
 
       if (!mounted) return;
 
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Product published successfully',
-            ),
-          ),
-        );
-
+      if (result.success) {
+        if (result.productId != null) {
+          ref
+              .read(productsProvider.notifier)
+              .update(product.copyWith(wooId: result.productId));
+        }
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Product published successfully')));
         Navigator.of(context).pop();
-
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'WooCommerce publish failed',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result.message ?? 'WooCommerce publish failed')));
     } catch (e) {
-      print('========== WOO ERROR ==========');
-      print(e);
-      print('================================');
-
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Publish failed: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Publish failed: $e')));
     }
 
-    if (mounted) {
-      setState(() {
-        _processing = false;
-      });
-    }
+    if (mounted) setState(() => _processing = false);
   }
+
+  // ── BUILD ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -355,9 +220,7 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
       resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: switch (_step) {
             0 => _stepPhoto(),
             1 => _stepVoice(),
@@ -369,54 +232,38 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     );
   }
 
-  // =========================================================
-  // STEP 1
-  // =========================================================
+  // ── STEP 1: PHOTO ─────────────────────────────────────────────────────
 
   Widget _stepPhoto() {
+    final tr = ref.watch(trProvider);
     return Column(
       children: [
-        const _Header(
-          title: 'Add Product Photos',
-        ),
+        _Header(title: tr('addPhotos')),
         const SizedBox(height: 12),
         Expanded(
           child: Center(
             child: Container(
               width: double.infinity,
-              margin: const EdgeInsets.symmetric(
-                vertical: 12,
-              ),
+              margin: const EdgeInsets.symmetric(vertical: 12),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.border,
-                  width: 1.5,
-                ),
+                border: Border.all(color: AppColors.border, width: 1.5),
               ),
               child: _imagePaths.isEmpty
                   ? GestureDetector(
-                      onTap: () => _takePhoto(
-                        source: ImageSource.camera,
-                      ),
-                      child: const Column(
+                      onTap: () => _takePhoto(source: ImageSource.camera),
+                      child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.photo_camera_outlined,
-                            size: 80,
-                            color: AppColors.primary,
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'Tap to Add Photos',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          const Icon(Icons.photo_camera_outlined,
+                              size: 80, color: AppColors.primary),
+                          const SizedBox(height: 16),
+                          Text(tr('tapToAddPhotos'),
+                              style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600)),
                         ],
                       ),
                     )
@@ -431,19 +278,12 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                                 children: [
                                   Container(
                                     width: 220,
-                                    margin: const EdgeInsets.only(
-                                      right: 12,
-                                    ),
+                                    margin: const EdgeInsets.only(right: 12),
                                     child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(
-                                        14,
-                                      ),
+                                      borderRadius: BorderRadius.circular(14),
                                       child: Image.file(
-                                        File(
-                                          _imagePaths[i],
-                                        ),
-                                        fit: BoxFit.cover,
-                                      ),
+                                          File(_imagePaths[i]),
+                                          fit: BoxFit.cover),
                                     ),
                                   ),
                                   Positioned(
@@ -454,11 +294,8 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                                       child: const CircleAvatar(
                                         radius: 14,
                                         backgroundColor: Colors.red,
-                                        child: Icon(
-                                          Icons.close,
-                                          color: Colors.white,
-                                          size: 16,
-                                        ),
+                                        child: Icon(Icons.close,
+                                            color: Colors.white, size: 16),
                                       ),
                                     ),
                                   ),
@@ -469,13 +306,10 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                         ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
-                          onPressed: () => _takePhoto(
-                            source: ImageSource.gallery,
-                          ),
+                          onPressed: () =>
+                              _takePhoto(source: ImageSource.gallery),
                           icon: const Icon(Icons.add),
-                          label: const Text(
-                            'Add More Photos',
-                          ),
+                          label: Text(tr('addMorePhotos')),
                         ),
                       ],
                     ),
@@ -489,13 +323,9 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _takePhoto(
-                    source: ImageSource.gallery,
-                  ),
-                  icon: const Icon(
-                    Icons.photo_library_outlined,
-                  ),
-                  label: const Text('Gallery'),
+                  onPressed: () => _takePhoto(source: ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: Text(tr('gallery')),
                 ),
               ),
               const SizedBox(width: 12),
@@ -503,8 +333,7 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                 child: ElevatedButton(
                   onPressed: () => setState(() => _step = 1),
                   child: Text(
-                    _imagePaths.isEmpty ? 'Skip' : 'Next',
-                  ),
+                      _imagePaths.isEmpty ? tr('skip') : tr('next')),
                 ),
               ),
             ],
@@ -514,16 +343,13 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     );
   }
 
-  // =========================================================
-  // STEP 2
-  // =========================================================
+  // ── STEP 2: VOICE ─────────────────────────────────────────────────────
 
   Widget _stepVoice() {
+    final tr = ref.watch(trProvider);
     return Column(
       children: [
-        const _Header(
-          title: 'Tell us about your product',
-        ),
+        _Header(title: tr('describeProduct')),
         const SizedBox(height: 16),
         Expanded(
           child: SingleChildScrollView(
@@ -535,13 +361,11 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppColors.border,
-                    ),
+                    border: Border.all(color: AppColors.border),
                   ),
                   child: Text(
                     _voiceTranscript.isEmpty
-                        ? 'Press the microphone and describe your product in your own words.'
+                        ? tr('describeProductHint')
                         : _voiceTranscript,
                     style: TextStyle(
                       color: _voiceTranscript.isEmpty
@@ -554,27 +378,20 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                 ),
                 const SizedBox(height: 24),
                 _LabelField(
-                  label: 'Price (₹)',
-                  controller: _price,
-                  number: true,
-                  onMic: () => _listenToNumber(_price),
-                ),
+                    label: tr('price'),
+                    controller: _price,
+                    number: true,
+                    onMic: () => _listenToNumber(_price)),
                 _LabelField(
-                  label: 'Quantity Available',
-                  controller: _qty,
-                  number: true,
-                  onMic: () => _listenToNumber(_qty),
-                ),
+                    label: tr('quantityAvailable'),
+                    controller: _qty,
+                    number: true,
+                    onMic: () => _listenToNumber(_qty)),
               ],
             ),
           ),
         ),
-        Center(
-          child: VoiceButton(
-            listening: _listening,
-            onTap: _toggleVoice,
-          ),
-        ),
+        Center(child: VoiceButton(listening: _listening, onTap: _toggleVoice)),
         const SizedBox(height: 16),
         SafeArea(
           top: false,
@@ -584,20 +401,17 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () => setState(() => _step = 0),
-                  child: const Text('Back'),
+                  child: Text(tr('back')),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
                   onPressed: () {
-                    setState(() {
-                      _step = 2;
-                    });
-
+                    setState(() => _step = 2);
                     _runAi();
                   },
-                  child: const Text('Next'),
+                  child: Text(tr('next')),
                 ),
               ),
             ],
@@ -607,41 +421,31 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     );
   }
 
-  // =========================================================
-  // STEP 3
-  // =========================================================
+  // ── STEP 3: PROCESSING ────────────────────────────────────────────────
 
   Widget _stepProcessing() {
-    return const Center(
+    final tr = ref.watch(trProvider);
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(
-            color: AppColors.primary,
-          ),
-          SizedBox(height: 20),
-          Text(
-            'AI is preparing your listing...',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textMuted,
-            ),
-          ),
+          const CircularProgressIndicator(color: AppColors.primary),
+          const SizedBox(height: 20),
+          Text(tr('aiProcessing'),
+              style: const TextStyle(
+                  fontSize: 16, color: AppColors.textMuted)),
         ],
       ),
     );
   }
 
-  // =========================================================
-  // STEP 4
-  // =========================================================
+  // ── STEP 4: REVIEW ────────────────────────────────────────────────────
 
   Widget _stepReview() {
+    final tr = ref.watch(trProvider);
     return Column(
       children: [
-        const _Header(
-          title: 'Final Review',
-        ),
+        _Header(title: tr('finalReview')),
         Expanded(
           child: SingleChildScrollView(
             child: Column(
@@ -655,49 +459,33 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
                       itemCount: _imagePaths.length,
                       itemBuilder: (_, i) {
                         return Padding(
-                          padding: const EdgeInsets.only(
-                            right: 12,
-                          ),
+                          padding: const EdgeInsets.only(right: 12),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(16),
-                            child: Image.file(
-                              File(
-                                _imagePaths[i],
-                              ),
-                              width: 220,
-                              fit: BoxFit.cover,
-                            ),
+                            child: Image.file(File(_imagePaths[i]),
+                                width: 220, fit: BoxFit.cover),
                           ),
                         );
                       },
                     ),
                   ),
                 const SizedBox(height: 20),
+                _LabelField(label: tr('title'), controller: _title),
+                _LabelField(label: tr('category'), controller: _category),
                 _LabelField(
-                  label: 'Title',
-                  controller: _title,
-                ),
+                    label: tr('price'),
+                    controller: _price,
+                    number: true,
+                    onMic: () => _listenToNumber(_price)),
                 _LabelField(
-                  label: 'Category',
-                  controller: _category,
-                ),
+                    label: tr('qty'),
+                    controller: _qty,
+                    number: true,
+                    onMic: () => _listenToNumber(_qty)),
                 _LabelField(
-                  label: 'Price',
-                  controller: _price,
-                  number: true,
-                  onMic: () => _listenToNumber(_price),
-                ),
-                _LabelField(
-                  label: 'Quantity',
-                  controller: _qty,
-                  number: true,
-                  onMic: () => _listenToNumber(_qty),
-                ),
-                _LabelField(
-                  label: 'Description',
-                  controller: _description,
-                  maxLines: 5,
-                ),
+                    label: tr('description'),
+                    controller: _description,
+                    maxLines: 5),
               ],
             ),
           ),
@@ -710,21 +498,14 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
             child: ElevatedButton(
               onPressed: _processing ? null : _publish,
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 14,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 child: _processing
                     ? const SizedBox(
                         height: 22,
                         width: 22,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Publish Product',
-                      ),
+                            strokeWidth: 2, color: Colors.white))
+                    : Text(tr('publishProduct')),
               ),
             ),
           ),
@@ -734,29 +515,20 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   }
 }
 
-// =========================================================
-// HEADER
-// =========================================================
+// ── HEADER ────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
   final String title;
-
-  const _Header({
-    required this.title,
-  });
+  const _Header({required this.title});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: Text(title,
+              style: const TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.w700)),
         ),
         IconButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -767,19 +539,13 @@ class _Header extends StatelessWidget {
   }
 }
 
-// =========================================================
-// FIELD
-// =========================================================
+// ── FIELD ─────────────────────────────────────────────────────────────────
 
 class _LabelField extends StatelessWidget {
   final String label;
-
   final TextEditingController controller;
-
   final bool number;
-
   final int maxLines;
-
   final VoidCallback? onMic;
 
   const _LabelField({
@@ -798,16 +564,9 @@ class _LabelField extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(
-              left: 4,
-              bottom: 6,
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
           Row(
             children: [
@@ -815,15 +574,13 @@ class _LabelField extends StatelessWidget {
                 child: TextField(
                   controller: controller,
                   maxLines: maxLines,
-                  keyboardType:
-                      number ? TextInputType.number : TextInputType.multiline,
+                  keyboardType: number
+                      ? TextInputType.number
+                      : TextInputType.multiline,
                 ),
               ),
               if (onMic != null)
-                IconButton(
-                  onPressed: onMic,
-                  icon: const Icon(Icons.mic),
-                ),
+                IconButton(onPressed: onMic, icon: const Icon(Icons.mic)),
             ],
           ),
         ],

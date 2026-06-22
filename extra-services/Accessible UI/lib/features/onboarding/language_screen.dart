@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../models/app_language.dart';
 import '../../providers/language_provider.dart';
+import '../../providers/translations_provider.dart';
 
 /// =========================
 /// TTS SERVICE (LOCAL)
@@ -34,6 +35,7 @@ class LanguageScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(languageProvider);
+    final tr = ref.watch(trProvider);
 
     return Scaffold(
       body: Container(
@@ -56,7 +58,7 @@ class LanguageScreen extends ConsumerWidget {
                 const Center(child: AppLogo()),
                 const SizedBox(height: 28),
                 Text(
-                  'Choose your language',
+                  tr('chooseLanguage'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -85,7 +87,7 @@ class LanguageScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 ElevatedButton(
                   onPressed: () => context.go('/signup'),
-                  child: const Text('Continue'),
+                  child: Text(tr('continueBtn')),
                 ),
               ],
             ),

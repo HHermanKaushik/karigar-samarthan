@@ -8,6 +8,8 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../core/theme/app_colors.dart';
 import '../../models/product.dart';
 import '../../providers/products_provider.dart';
+import '../../providers/translations_provider.dart';
+import '../../services/service_providers.dart';
 
 class EditProductScreen extends ConsumerStatefulWidget {
   final Product product;
@@ -24,24 +26,19 @@ class EditProductScreen extends ConsumerStatefulWidget {
 class _State extends ConsumerState<EditProductScreen> {
   late final TextEditingController _title =
       TextEditingController(text: widget.product.title);
-
   late final TextEditingController _category =
       TextEditingController(text: widget.product.category);
-
   late final TextEditingController _price =
       TextEditingController(text: widget.product.price.toStringAsFixed(0));
-
   late final TextEditingController _qty =
       TextEditingController(text: widget.product.quantity.toString());
-
   late final TextEditingController _desc =
       TextEditingController(text: widget.product.description);
 
   final List<File> _images = [];
-
   final stt.SpeechToText _speech = stt.SpeechToText();
-
   bool _isListening = false;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -53,106 +50,98 @@ class _State extends ConsumerState<EditProductScreen> {
     super.dispose();
   }
 
-  // =========================
-  // SAVE
-  // =========================
-  void _save() {
-    ref.read(productsProvider.notifier).update(
-          widget.product.copyWith(
-            title: _title.text,
-            category: _category.text,
-            description: _desc.text,
-            price: double.tryParse(_price.text) ?? widget.product.price,
-            quantity: int.tryParse(_qty.text) ?? widget.product.quantity,
-          ),
-        );
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
 
-    Navigator.of(context).pop();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _images.isEmpty
-              ? 'Product saved (no images)'
-              : 'Product saved with ${_images.length} image(s)',
-        ),
-      ),
+    final updated = widget.product.copyWith(
+      title: _title.text.trim(),
+      category: _category.text.trim(),
+      description: _desc.text.trim(),
+      price: double.tryParse(_price.text.trim()) ?? widget.product.price,
+      quantity: int.tryParse(_qty.text.trim()) ?? widget.product.quantity,
     );
+
+    ref.read(productsProvider.notifier).update(updated);
+
+    if (widget.product.wooId != null) {
+      final woo = ref.read(wooServiceProvider);
+      final result = await woo.updateProduct(
+        wooId: widget.product.wooId!,
+        title: updated.title,
+        description: updated.description,
+        price: _price.text.trim(),
+        quantity: updated.quantity,
+      );
+
+      if (!mounted) return;
+      setState(() => _saving = false);
+
+      if (!result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result.message ??
+              'Saved locally but could not update the live store. Please try again.'),
+        ));
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Product updated on the live store.'),
+      ));
+    } else {
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_images.isEmpty
+            ? 'Saved locally. This product has not been published to the store yet.'
+            : 'Saved locally with ${_images.length} image(s). This product has not been published yet.'),
+      ));
+    }
+
+    if (mounted) Navigator.of(context).pop();
   }
 
-  // =========================
-  // IMAGE PICKER
-  // =========================
   Future<void> _addImage() async {
     final picker = ImagePicker();
-
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-    );
-
-    if (picked != null) {
-      setState(() {
-        _images.add(File(picked.path));
-      });
-    }
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) setState(() => _images.add(File(picked.path)));
   }
 
-  void _removeImage(int index) {
-    setState(() {
-      _images.removeAt(index);
-    });
-  }
+  void _removeImage(int index) => setState(() => _images.removeAt(index));
 
-  // =========================
-  // SPEECH TO TEXT
-  // =========================
   Future<void> _listen(TextEditingController controller) async {
     if (!_isListening) {
-      bool available = await _speech.initialize();
-
+      final available = await _speech.initialize();
       if (available) {
         setState(() => _isListening = true);
-
         _speech.listen(
-          onResult: (result) {
-            setState(() {
-              controller.text = result.recognizedWords;
-            });
-          },
-        );
+            onResult: (r) =>
+                setState(() => controller.text = r.recognizedWords));
       }
     } else {
       setState(() => _isListening = false);
-
       _speech.stop();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final tr = ref.watch(trProvider);
     return Scaffold(
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: true,
-
-      // =========================
-      // BODY
-      // =========================
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // HEADER
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Edit Product',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      tr('editProduct'),
+                      style: const TextStyle(
+                          fontSize: 26, fontWeight: FontWeight.w700),
                     ),
                   ),
                   IconButton(
@@ -162,32 +151,49 @@ class _State extends ConsumerState<EditProductScreen> {
                 ],
               ),
 
-              const SizedBox(height: 20),
+              if (widget.product.wooId == null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber,
+                          color: Colors.amber.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          tr('productNotPublished'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
-              // =========================
+              const SizedBox(height: 8),
+
               // IMAGE SECTION
-              // =========================
               Container(
                 height: 180,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.05),
+                  color: AppColors.primary.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(
-                    color: AppColors.border,
-                  ),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: Column(
                   children: [
                     Expanded(
                       child: _images.isEmpty
                           ? const Center(
-                              child: Icon(
-                                Icons.add_a_photo_outlined,
-                                size: 54,
-                                color: AppColors.primary,
-                              ),
-                            )
+                              child: Icon(Icons.add_a_photo_outlined,
+                                  size: 54, color: AppColors.primary))
                           : ListView.builder(
                               scrollDirection: Axis.horizontal,
                               itemCount: _images.length,
@@ -195,10 +201,12 @@ class _State extends ConsumerState<EditProductScreen> {
                                 return Stack(
                                   children: [
                                     Container(
-                                      margin: const EdgeInsets.only(right: 12),
+                                      margin:
+                                          const EdgeInsets.only(right: 12),
                                       width: 130,
                                       decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(16),
+                                        borderRadius:
+                                            BorderRadius.circular(16),
                                         image: DecorationImage(
                                           image: FileImage(_images[i]),
                                           fit: BoxFit.cover,
@@ -213,11 +221,9 @@ class _State extends ConsumerState<EditProductScreen> {
                                         child: const CircleAvatar(
                                           radius: 13,
                                           backgroundColor: Colors.red,
-                                          child: Icon(
-                                            Icons.close,
-                                            size: 15,
-                                            color: Colors.white,
-                                          ),
+                                          child: Icon(Icons.close,
+                                              size: 15,
+                                              color: Colors.white),
                                         ),
                                       ),
                                     ),
@@ -232,7 +238,7 @@ class _State extends ConsumerState<EditProductScreen> {
                       child: TextButton.icon(
                         onPressed: _addImage,
                         icon: const Icon(Icons.add),
-                        label: const Text('Add Image'),
+                        label: Text(tr('addImage')),
                       ),
                     ),
                   ],
@@ -242,53 +248,41 @@ class _State extends ConsumerState<EditProductScreen> {
               const SizedBox(height: 24),
 
               _Field(
-                label: 'Title',
-                controller: _title,
-                onMic: () => _listen(_title),
-              ),
-
+                  label: tr('title'),
+                  controller: _title,
+                  onMic: () => _listen(_title)),
               _Field(
-                label: 'Category',
-                controller: _category,
-                onMic: () => _listen(_category),
-              ),
-
+                  label: tr('category'),
+                  controller: _category,
+                  onMic: () => _listen(_category)),
               Row(
                 children: [
                   Expanded(
                     child: _Field(
-                      label: 'Price',
-                      controller: _price,
-                      number: true,
-                      onMic: () => _listen(_price),
-                    ),
+                        label: tr('price'),
+                        controller: _price,
+                        number: true,
+                        onMic: () => _listen(_price)),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: _Field(
-                      label: 'Quantity',
-                      controller: _qty,
-                      number: true,
-                      onMic: () => _listen(_qty),
-                    ),
+                        label: tr('qty'),
+                        controller: _qty,
+                        number: true,
+                        onMic: () => _listen(_qty)),
                   ),
                 ],
               ),
-
               _Field(
-                label: 'Description',
-                controller: _desc,
-                lines: 5,
-                onMic: () => _listen(_desc),
-              ),
+                  label: tr('description'),
+                  controller: _desc,
+                  lines: 5,
+                  onMic: () => _listen(_desc)),
             ],
           ),
         ),
       ),
-
-      // =========================
-      // STICKY SAVE BUTTON
-      // =========================
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Container(
@@ -297,7 +291,7 @@ class _State extends ConsumerState<EditProductScreen> {
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 20,
                 offset: const Offset(0, -4),
               ),
@@ -305,8 +299,14 @@ class _State extends ConsumerState<EditProductScreen> {
           ),
           padding: const EdgeInsets.all(12),
           child: ElevatedButton(
-            onPressed: _save,
-            child: const Text('Save Product'),
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : Text(tr('saveProduct')),
           ),
         ),
       ),
@@ -314,9 +314,6 @@ class _State extends ConsumerState<EditProductScreen> {
   }
 }
 
-// =========================
-// FIELD
-// =========================
 class _Field extends StatelessWidget {
   final String label;
   final TextEditingController controller;
@@ -340,17 +337,10 @@ class _Field extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(
-              left: 4,
-              bottom: 8,
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-              ),
-            ),
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(label,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 15)),
           ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -367,7 +357,7 @@ class _Field extends StatelessWidget {
               Container(
                 margin: const EdgeInsets.only(top: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.08),
+                  color: AppColors.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: IconButton(

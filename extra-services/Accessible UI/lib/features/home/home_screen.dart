@@ -7,33 +7,36 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_modal.dart';
 import '../../models/product.dart';
 import '../../providers/products_provider.dart';
+import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
 import '../products/edit_product_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   final VoidCallback onAddProduct;
   final VoidCallback onOrders;
+  final VoidCallback onProfile;
+  final VoidCallback onAssistant;
+  final VoidCallback onHelp;
 
   const HomeScreen({
     super.key,
     required this.onAddProduct,
     required this.onOrders,
+    required this.onProfile,
+    required this.onAssistant,
+    required this.onHelp,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(userProvider);
     final products = ref.watch(productsProvider);
+    final tr = ref.watch(trProvider);
 
     final List<List<Product>> columns = [];
-
     for (int i = 0; i < products.length; i += 2) {
-      columns.add(
-        products.sublist(
-          i,
-          i + 2 > products.length ? products.length : i + 2,
-        ),
-      );
+      columns.add(products.sublist(
+          i, i + 2 > products.length ? products.length : i + 2));
     }
 
     return SafeArea(
@@ -47,22 +50,36 @@ class HomeScreen extends ConsumerWidget {
               children: [
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(
-                      Icons.smart_toy_outlined,
-                      color: AppColors.primary,
-                    ),
-                    label: const Text(
-                      'Ask AI Assistant',
-                      style: TextStyle(color: AppColors.primary),
-                    ),
+                    onPressed: onAssistant,
+                    icon: const Icon(Icons.smart_toy_outlined,
+                        color: AppColors.primary),
+                    label: Text(tr('askAiAssistant'),
+                        style: const TextStyle(color: AppColors.primary)),
                   ),
                 ),
-                IconButton(
-                  onPressed: () {},
-                  icon: const Icon(
-                    Icons.help_outline,
-                    color: AppColors.primary,
+                Semantics(
+                  button: true,
+                  label: tr('helpAndSupport'),
+                  child: IconButton(
+                    onPressed: onHelp,
+                    icon: const Icon(Icons.help_outline,
+                        color: AppColors.primary),
+                  ),
+                ),
+                Semantics(
+                  button: true,
+                  label: tr('viewEditAccount'),
+                  child: InkWell(
+                    onTap: onProfile,
+                    borderRadius: BorderRadius.circular(24),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: CircleAvatar(
+                        radius: 20,
+                        backgroundColor: AppColors.surface,
+                        child: Icon(Icons.person, color: AppColors.primary),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -72,7 +89,7 @@ class HomeScreen extends ConsumerWidget {
 
             /// TITLE
             Text(
-              'My Store',
+              tr('myStore'),
               style: Theme.of(context)
                   .textTheme
                   .headlineSmall
@@ -83,13 +100,13 @@ class HomeScreen extends ConsumerWidget {
 
             /// GREETING
             Text(
-              'Welcome back, ${user.fullName.isEmpty ? "Seller" : user.fullName.split(' ').first}',
+              '${tr('welcomeBack')}, ${user.fullName.isEmpty ? "Seller" : user.fullName.split(' ').first}',
               style: const TextStyle(color: AppColors.textMuted),
             ),
 
             const SizedBox(height: 18),
 
-            /// PRODUCTS SECTION
+            /// PRODUCTS
             if (products.isEmpty)
               Container(
                 width: double.infinity,
@@ -98,26 +115,21 @@ class HomeScreen extends ConsumerWidget {
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Column(
+                child: Column(
                   children: [
-                    Icon(
-                      Icons.inventory_2_outlined,
-                      size: 64,
-                      color: AppColors.primary,
-                    ),
-                    SizedBox(height: 14),
+                    const Icon(Icons.inventory_2_outlined,
+                        size: 64, color: AppColors.primary),
+                    const SizedBox(height: 14),
                     Text(
-                      'No products added yet',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      tr('noProductsYet'),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w600),
                     ),
-                    SizedBox(height: 6),
+                    const SizedBox(height: 6),
                     Text(
-                      'Tap below to add your first product',
+                      tr('tapToAddFirst'),
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textMuted),
+                      style: const TextStyle(color: AppColors.textMuted),
                     ),
                   ],
                 ),
@@ -131,7 +143,6 @@ class HomeScreen extends ConsumerWidget {
                   separatorBuilder: (_, __) => const SizedBox(width: 14),
                   itemBuilder: (context, index) {
                     final col = columns[index];
-
                     return SizedBox(
                       width: 180,
                       child: Column(
@@ -141,10 +152,9 @@ class HomeScreen extends ConsumerWidget {
                               margin: const EdgeInsets.only(bottom: 12),
                               child: _ProductTile(
                                 product: p,
-                                onTap: () => showAppModal(
-                                  context,
-                                  child: EditProductScreen(product: p),
-                                ),
+                                qtyLabel: tr('qty'),
+                                onTap: () => showAppModal(context,
+                                    child: EditProductScreen(product: p)),
                               ),
                             ),
                           );
@@ -157,8 +167,7 @@ class HomeScreen extends ConsumerWidget {
 
             const SizedBox(height: 20),
 
-            /// ADD PRODUCT BUTTON
-            _AddCard(onTap: onAddProduct),
+            _AddCard(label: tr('addNewProduct'), onTap: onAddProduct),
           ],
         ),
       ),
@@ -168,10 +177,12 @@ class HomeScreen extends ConsumerWidget {
 
 class _ProductTile extends StatelessWidget {
   final Product product;
+  final String qtyLabel;
   final VoidCallback onTap;
 
   const _ProductTile({
     required this.product,
+    required this.qtyLabel,
     required this.onTap,
   });
 
@@ -188,7 +199,6 @@ class _ProductTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              /// IMAGE
               Expanded(
                 child: Container(
                   width: double.infinity,
@@ -205,49 +215,28 @@ class _ProductTile extends StatelessWidget {
                           ),
                         )
                       : const Center(
-                          child: Icon(
-                            Icons.image_outlined,
-                            size: 42,
-                            color: AppColors.primary,
-                          ),
+                          child: Icon(Icons.image_outlined,
+                              size: 42, color: AppColors.primary),
                         ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
-              /// PRODUCT TITLE
               Text(
                 product.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
+                    fontWeight: FontWeight.w600, fontSize: 14),
               ),
-
               const SizedBox(height: 6),
-
-              /// PRICE
-              Text(
-                '₹ ${product.price.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-
+              Text('₹ ${product.price.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w500)),
               const SizedBox(height: 4),
-
-              /// QUANTITY
-              Text(
-                'Qty: ${product.quantity}',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
-              ),
+              Text('$qtyLabel: ${product.quantity}',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12)),
             ],
           ),
         ),
@@ -257,9 +246,10 @@ class _ProductTile extends StatelessWidget {
 }
 
 class _AddCard extends StatelessWidget {
+  final String label;
   final VoidCallback onTap;
 
-  const _AddCard({required this.onTap});
+  const _AddCard({required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -267,29 +257,26 @@ class _AddCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          vertical: 22,
-          horizontal: 16,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
         decoration: BoxDecoration(
           color: AppColors.primary,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.add_circle, color: Colors.white, size: 32),
-            SizedBox(width: 14),
+            const Icon(Icons.add_circle, color: Colors.white, size: 32),
+            const SizedBox(width: 14),
             Expanded(
               child: Text(
-                'Add a New Product',
-                style: TextStyle(
+                label,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.white),
+            const Icon(Icons.chevron_right, color: Colors.white),
           ],
         ),
       ),

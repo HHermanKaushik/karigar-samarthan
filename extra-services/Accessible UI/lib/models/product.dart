@@ -5,11 +5,12 @@ class Product {
   final String description;
   final double price;
   final int quantity;
-
-  // MULTIPLE IMAGES
   final List<String> imagePaths;
-
   final List<String> tags;
+
+  /// The WooCommerce product ID returned after a successful publish.
+  /// Null for seed/local-only products that haven't been synced yet.
+  final int? wooId;
 
   const Product({
     required this.id,
@@ -20,6 +21,7 @@ class Product {
     required this.quantity,
     this.imagePaths = const [],
     this.tags = const [],
+    this.wooId,
   });
 
   Product copyWith({
@@ -30,6 +32,7 @@ class Product {
     int? quantity,
     List<String>? imagePaths,
     List<String>? tags,
+    int? wooId,
   }) {
     return Product(
       id: id,
@@ -40,6 +43,7 @@ class Product {
       quantity: quantity ?? this.quantity,
       imagePaths: imagePaths ?? this.imagePaths,
       tags: tags ?? this.tags,
+      wooId: wooId ?? this.wooId,
     );
   }
 }

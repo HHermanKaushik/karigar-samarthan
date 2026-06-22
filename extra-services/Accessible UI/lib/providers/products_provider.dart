@@ -1,60 +1,79 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/product.dart';
 
 class ProductsNotifier extends StateNotifier<List<Product>> {
-  ProductsNotifier() : super(_seed);
+  ProductsNotifier() : super([]) {
+    _loadFromFirestore();
+  }
 
-  static final List<Product> _seed = [
-    const Product(
-      id: 'p1',
-      title: 'Handwoven Pashmina Shawl',
-      category: 'Apparel',
-      description:
-          'Handwoven Pashmina shawl made by Kashmiri artisans using traditional techniques. Soft, lightweight, suitable for winter.',
-      price: 3500,
-      quantity: 3,
-    ),
-    const Product(
-      id: 'p2',
-      title: 'Bokhara wool-silk rug',
-      category: 'Home Decor',
-      description: 'Hand-knotted Bokhara rug in wool and silk blend.',
-      price: 12500,
-      quantity: 1,
-    ),
-    const Product(
-      id: 'p3',
-      title: 'Jamawar Silk Saree',
-      category: 'Apparel',
-      description: 'Pure Jamawar silk saree with traditional motifs.',
-      price: 8900,
-      quantity: 2,
-    ),
-    const Product(
-      id: 'p4',
-      title: 'Kaani Silk Saree',
-      category: 'Apparel',
-      description: 'Kaani weave silk saree from Kashmir.',
-      price: 9600,
-      quantity: 2,
-    ),
-    const Product(
-      id: 'p5',
-      title: 'Raffal Paisley Stole',
-      category: 'Apparel',
-      description: 'Raffal wool stole with paisley embroidery.',
-      price: 1800,
-      quantity: 5,
-    ),
-  ];
+  static FirebaseFirestore get _db => FirebaseFirestore.instanceFor(
+        app: Firebase.app(),
+        databaseId: 'karigar',
+      );
 
-  void add(Product p) => state = [p, ...state];
+  static bool get _isAuthenticated {
+    final user = FirebaseAuth.instance.currentUser;
+    return user != null && !user.isAnonymous;
+  }
 
-  void update(Product p) =>
-      state = [for (final x in state) if (x.id == p.id) p else x];
+  static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  void remove(String id) => state = state.where((x) => x.id != id).toList();
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('users').doc(_uid).collection('products');
+
+  Future<void> _loadFromFirestore() async {
+    if (!_isAuthenticated) return;
+    try {
+      final snap = await _col.get();
+      state = snap.docs.map(_fromDoc).toList();
+    } catch (_) {}
+  }
+
+  void add(Product p) {
+    state = [p, ...state];
+    if (_isAuthenticated) _col.doc(p.id).set(_toMap(p));
+  }
+
+  void update(Product p) {
+    state = [for (final x in state) if (x.id == p.id) p else x];
+    if (_isAuthenticated) _col.doc(p.id).set(_toMap(p));
+  }
+
+  void remove(String id) {
+    state = state.where((x) => x.id != id).toList();
+    if (_isAuthenticated) _col.doc(id).delete();
+  }
+
+  static Product _fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    return Product(
+      id: doc.id,
+      title: d['title'] ?? '',
+      category: d['category'] ?? '',
+      description: d['description'] ?? '',
+      price: (d['price'] as num?)?.toDouble() ?? 0,
+      quantity: (d['quantity'] as num?)?.toInt() ?? 0,
+      imagePaths: List<String>.from(d['imagePaths'] ?? []),
+      tags: List<String>.from(d['tags'] ?? []),
+      wooId: d['wooId'] as int?,
+    );
+  }
+
+  static Map<String, dynamic> _toMap(Product p) => {
+        'title': p.title,
+        'category': p.category,
+        'description': p.description,
+        'price': p.price,
+        'quantity': p.quantity,
+        'imagePaths': p.imagePaths,
+        'tags': p.tags,
+        if (p.wooId != null) 'wooId': p.wooId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
 }
 
 final productsProvider =
