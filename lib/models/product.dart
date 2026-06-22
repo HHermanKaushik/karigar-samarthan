@@ -1,34 +1,49 @@
-import 'dart:io';
-
 class Product {
   final String id;
-  final String name;
+  final String title;
   final String category;
   final String description;
   final double price;
   final int quantity;
-  final File? imageFile;
+  final List<String> imagePaths;
+  final List<String> tags;
 
-  Product({
+  /// The WooCommerce product ID returned after a successful publish.
+  /// Null for seed/local-only products that haven't been synced yet.
+  final int? wooId;
+
+  const Product({
     required this.id,
-    required this.name,
+    required this.title,
     required this.category,
     required this.description,
     required this.price,
     required this.quantity,
-    this.imageFile,
+    this.imagePaths = const [],
+    this.tags = const [],
+    this.wooId,
   });
 
-  // Converting to JSON for backend
-  Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'type': 'simple',
-      'regular_price': price.toString(),
-      'description': description,
-      'categories': [{'name': category}],
-      'stock_quantity': quantity,
-      'manage_stock': true,
-    };
+  Product copyWith({
+    String? title,
+    String? category,
+    String? description,
+    double? price,
+    int? quantity,
+    List<String>? imagePaths,
+    List<String>? tags,
+    int? wooId,
+  }) {
+    return Product(
+      id: id,
+      title: title ?? this.title,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      price: price ?? this.price,
+      quantity: quantity ?? this.quantity,
+      imagePaths: imagePaths ?? this.imagePaths,
+      tags: tags ?? this.tags,
+      wooId: wooId ?? this.wooId,
+    );
   }
 }

@@ -1,166 +1,49 @@
-# Karigar Samarthan (Flutter App)
+# Karigar Samarthan
 
-A **voice‑first Android Flutter application** designed to help Indian artisans (karigars) easily create, manage, and market product listings with **minimal typing, reduced navigation complexity, and assistive AI guidance**.
+Multilingual AI-assisted seller platform for Indian Karigars (artisans).
 
-This repository contains the **mobile layer** of the Karigar Samarthan system. The IVR Helpline, Volunteer-Entry fallback method, and any other supportive layers are organized within the "extra services" subdirectory.
----
-
-## 🧭 Project Goals
-
-* Reduce literacy and typing requirements
-* Enable voice‑first interaction flows
-* Minimize navigation depth
-* Provide guided, step‑by‑step product listing
-* Serve as a scalable foundation for future AI‑assisted features
-
----
-
-## 🛠 Tech Stack
-
-* **Flutter** (Dart)
-* **Material UI**
-* **Provider** (state management)
-* **GoRouter** (navigation)
-
----
-
-## 📁 Project Structure
-
-```text
-lib/
- ├── components/        # Reusable UI components (ActionCard, VoiceButton, etc.)
- ├── pages/             # App screens (Home, Language Selection, Add Product Wizard)
- ├── theme.dart         # Centralized theme & colors
- ├── nav.dart           # App routing
- └── main.dart          # App entry point
-```
-
----
-
-## ▶️ Running the App (Local Setup)
-
-### Prerequisites
-
-* Flutter SDK installed
-* Android Studio / Android SDK
-* An Android emulator or physical device
-
-### Steps
+## Setup
 
 ```bash
 flutter pub get
-flutter analyze
 flutter run
 ```
 
----
-
-## 👥 Team Collaboration Workflow
-
-We follow a **branch‑based workflow** to keep `main` stable.
-
-### Branches
-
-* `main` → stable, demo‑ready builds only
-* `feature/<feature-name>` → new features
-* `fix/<issue-name>` → bug fixes
-
-Example:
+If a platform folder (android/ios) is missing, regenerate with:
 
 ```bash
-git checkout -b feature/voice-product-flow
+flutter create --platforms=android,ios .
 ```
 
----
+This preserves `lib/`, `pubspec.yaml`, and `assets/` while adding native shells.
 
-## 🧪 Testing Expectations
+## Architecture
 
-Before pushing code:
+- State: Riverpod
+- Routing: go_router (modal-first; sub-screens are bottom sheets / overlays over a persistent StoreShell)
+- Backend: WooCommerce REST (`services/woocommerce_service.dart`) — products are
+  published via the WordPress media library (`/wp/v2/media`, Application
+  Password auth) + `/wc/v3/products`. See `.env.example` for required keys.
+- User profiles: synced to Firestore (`users/{uid}`) and linked to a
+  WooCommerce customer via `services/user_sync_service.dart`. Auth is
+  currently Firebase Anonymous (bridge until real Phone Auth is added).
+- Voice (AI Assistant chat): Sarvam AI STT/TTS via `services/sarvam_service.dart`
+  (`record` for mic capture, `audioplayers` for playback), driven by the
+  user's selected `AppLanguage`. Other screens (add-product voice input,
+  onboarding/profile TTS) still use on-device `speech_to_text` / `flutter_tts`
+  pending a follow-up sweep.
+- AI: Gemini (`services/ai_assistant_service.dart`) for chat + product-photo
+  analysis, with an app "knowledge base" and live account/product/order
+  context injected into prompts.
+- Diagnostics: `services/sync_logger.dart` logs backend-sync failures to
+  Firebase Crashlytics + a `sync_errors` Firestore collection.
+- Connectivity: `core/services/connectivity_service.dart` +
+  `core/widgets/network_error_view.dart` for fast offline detection and
+  friendly error UI.
+- Help & Support: `features/support/help_support_screen.dart` (Call Support
+  + FAQ), reachable from the Home screen "Help" button.
+- i18n: AppLanguage enum + LanguageNotifier persisted via SharedPreferences
 
-```bash
-flutter analyze
-flutter test   # when tests exist
-```
+## UX Philosophy
 
-No code should be merged to `main` if:
-
-* `flutter analyze` shows errors
-* The app does not launch
-
----
-
-## 🤝 Contributing Guidelines
-
-Please read carefully before contributing.
-
-### 1. Do NOT commit generated files
-
-These are already handled by `.gitignore`:
-
-* `build/`
-* `.dart_tool/`
-* `android/.gradle/`
-* `ios/Pods/`
-
----
-
-### 2. Adding a New Page
-
-1. Create the page in `lib/pages/`
-2. Register route in `nav.dart`
-3. Keep widgets **small and reusable**
-4. Prefer stateless widgets unless state is required
-
----
-
-### 3. Coding Conventions
-
-* lowerCamelCase for variables & methods
-* UpperCamelCase for classes
-* One widget per file (where possible)
-* Keep UI logic separate from navigation logic
-
----
-
-### 4. Commit Message Format
-
-Use clear, scoped commits:
-
-```text
-feat: add voice‑guided product wizard
-fix: resolve navigation crash on home page
-refactor: simplify ActionCard layout
-```
-
----
-
-## 🔐 Security Notes
-
-* No API keys or secrets in this repo
-* No keystores (`.jks`) committed
-* Future secrets must be injected via environment or CI
-
----
-
-## 📌 Current Status
-
-* Core navigation working
-* Home page functional
-* Voice‑first components scaffolded
-* Additional pages under active development
-
----
-
-## 📄 License
-
-This project is currently intended for **academic / prototype use**.
-Licensing will be finalized before production release.
-
----
-
-## ✨ Maintainers
-* Shree
-* Subh
-* Heather Herman Kaushik - project lead
-
-For questions, raise a GitHub Issue or discuss with the project lead.
+Modal-first, voice-first, minimal typing, no-fear UX. See `AGENTS.md`.
