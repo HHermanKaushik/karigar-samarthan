@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/voice_button.dart';
@@ -51,7 +52,16 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     try {
       final picker = ImagePicker();
       final x = await picker.pickImage(source: source, imageQuality: 80);
-      if (x != null) setState(() => _imagePaths.add(x.path));
+      if (x == null) return;
+
+      // Copy to the app's documents directory so the path survives app restarts.
+      final dir = await getApplicationDocumentsDirectory();
+      final ext = x.path.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+      final dest =
+          '${dir.path}/product_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await File(x.path).copy(dest);
+
+      if (mounted) setState(() => _imagePaths.add(dest));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,12 +97,38 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   }
 
   Future<void> _listenToNumber(TextEditingController controller) async {
+    final tr = ref.read(trProvider);
     final stt = ref.read(speechToTextProvider);
+
+    if (stt.isListening) {
+      await stt.stop();
+      return;
+    }
+
     final ok = await stt.initialize();
-    if (!ok) return;
+    if (!ok) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tr('micUnavailable')),
+      ));
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(tr('listening')),
+      duration: const Duration(seconds: 5),
+    ));
+
     stt.listen(
-        onResult: (r) => setState(() => controller.text =
-            r.recognizedWords.replaceAll(RegExp(r'[^0-9]'), '')));
+      listenFor: const Duration(seconds: 10),
+      onResult: (r) {
+        if (r.finalResult) {
+          setState(() => controller.text =
+              r.recognizedWords.replaceAll(RegExp(r'[^0-9.]'), ''));
+        }
+      },
+    );
   }
 
   // ── AI ────────────────────────────────────────────────────────────────
@@ -190,9 +226,10 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
 
       if (result.success) {
         if (result.productId != null) {
-          ref
-              .read(productsProvider.notifier)
-              .update(product.copyWith(wooId: result.productId));
+          ref.read(productsProvider.notifier).update(product.copyWith(
+                wooId: result.productId,
+                wooImageUrl: result.imageUrl,
+              ));
         }
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Product published successfully')));
@@ -392,7 +429,21 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
           ),
         ),
         Center(child: VoiceButton(listening: _listening, onTap: _toggleVoice)),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            _listening ? tr('recordingTapToStop') : tr('tapMicToDescribe'),
+            key: ValueKey(_listening),
+            style: TextStyle(
+              color: _listening ? AppColors.danger : AppColors.textMuted,
+              fontWeight:
+                  _listening ? FontWeight.w600 : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
         SafeArea(
           top: false,
           minimum: const EdgeInsets.fromLTRB(0, 12, 0, 28),

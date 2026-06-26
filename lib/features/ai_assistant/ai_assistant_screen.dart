@@ -100,16 +100,20 @@ class _State extends ConsumerState<AiAssistantScreen> {
     final productLines = products.isEmpty
         ? '- (none yet)'
         : products
-            .map((p) =>
-                '- "${p.title}" (${p.category}): price ₹${p.price.toStringAsFixed(0)}, qty ${p.quantity}${p.wooId != null ? ', wooId ${p.wooId}' : ''}')
-            .join('\n');
+              .map(
+                (p) =>
+                    '- "${p.title}" (${p.category}): price ₹${p.price.toStringAsFixed(0)}, qty ${p.quantity}${p.wooId != null ? ', wooId ${p.wooId}' : ''}',
+              )
+              .join('\n');
 
     final orderLines = orders.isEmpty
         ? '- (none yet)'
         : orders
-            .map((o) =>
-                '- Order #${o.id}: "${o.productTitle}" ×${o.quantity}, ₹${o.total.toStringAsFixed(0)}, status: ${o.status.name}, customer: ${o.customerName}')
-            .join('\n');
+              .map(
+                (o) =>
+                    '- Order #${o.id}: "${o.productTitle}" ×${o.quantity}, ₹${o.total.toStringAsFixed(0)}, status: ${o.status.name}, customer: ${o.customerName}',
+              )
+              .join('\n');
 
     return '''
 Seller name: ${user.fullName}
@@ -149,15 +153,19 @@ $orderLines
     _scrollToBottom();
 
     final lang = ref.read(languageProvider);
+    final tr = ref.read(trProvider);
     final response = await _getSession().send(content);
 
     if (!mounted) return;
 
+    final responseText = response.isError ? tr('aiError') : response.text;
     setState(() {
-      _messages.add(_ChatMessage(response.text, true));
+      _messages.add(_ChatMessage(responseText, true));
       _sending = false;
     });
     _scrollToBottom();
+
+    if (response.isError) return;
 
     // Speak the response first, then navigate if needed.
     await _speak(response.text, lang);
@@ -192,13 +200,15 @@ $orderLines
       return;
     }
 
+    final tr = ref.read(trProvider);
+
     if (!_recorderReady) {
       final status = await Permission.microphone.request();
       if (status != PermissionStatus.granted) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Microphone permission is needed for voice input'),
-          ));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(tr('micPermissionDenied'))));
         }
         return;
       }
@@ -244,9 +254,10 @@ $orderLines
     if (mounted) setState(() => _transcribing = false);
 
     if (result == null || result.transcript.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("Sorry, I didn't catch that. Please try again."),
-      ));
+      final tr = ref.read(trProvider);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('voiceNotCaptured'))));
       return;
     }
 
@@ -267,7 +278,9 @@ $orderLines
               Text(
                 tr('aiAssistant'),
                 style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const Spacer(),
               IconButton(
@@ -296,9 +309,7 @@ $orderLines
                       maxWidth: MediaQuery.of(context).size.width * 0.75,
                     ),
                     decoration: BoxDecoration(
-                      color: m.fromAi
-                          ? AppColors.surface
-                          : AppColors.primary,
+                      color: m.fromAi ? AppColors.surface : AppColors.primary,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: AppColors.border),
                     ),
@@ -316,8 +327,10 @@ $orderLines
           if (_transcribing)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(tr('listening'),
-                  style: const TextStyle(color: AppColors.textMuted)),
+              child: Text(
+                tr('listening'),
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
             ),
           SafeArea(
             top: false,
@@ -328,8 +341,7 @@ $orderLines
                   Expanded(
                     child: TextField(
                       controller: _input,
-                      decoration:
-                          InputDecoration(hintText: tr('typeMessage')),
+                      decoration: InputDecoration(hintText: tr('typeMessage')),
                       onSubmitted: _send,
                     ),
                   ),
@@ -370,8 +382,10 @@ class _Typing extends StatelessWidget {
             3,
             (i) => const Padding(
               padding: EdgeInsets.symmetric(horizontal: 2),
-              child:
-                  CircleAvatar(radius: 4, backgroundColor: AppColors.textMuted),
+              child: CircleAvatar(
+                radius: 4,
+                backgroundColor: AppColors.textMuted,
+              ),
             ),
           ),
         ),

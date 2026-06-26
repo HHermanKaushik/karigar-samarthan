@@ -146,13 +146,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (doc.exists && name.isNotEmpty) {
         hasProfile = true;
         final d = doc.data()!;
-        await ref.read(userProvider.notifier).saveLocal(UserProfile(
-              fullName: d['fullName'] ?? '',
-              storeName: d['storeName'] ?? '',
-              phone: d['phone'] ?? '',
-              role: d['role'] ?? 'Master Artisan',
-              paymentSetup: d['paymentSetup'] as bool? ?? false,
-            ));
+        try {
+          await ref.read(userProvider.notifier).saveLocal(UserProfile(
+                fullName: d['fullName'] ?? '',
+                storeName: d['storeName'] ?? '',
+                phone: d['phone'] ?? '',
+                role: d['role'] ?? 'Master Artisan',
+                paymentSetup: d['paymentSetup'] as bool? ?? false,
+              ));
+        } catch (e) {
+          debugPrint('login: saveLocal failed (non-fatal): $e');
+        }
         await ref.read(onboardingProvider.notifier).complete();
       }
     } on FirebaseException catch (e) {

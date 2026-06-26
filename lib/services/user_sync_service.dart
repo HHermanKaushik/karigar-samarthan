@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../providers/user_provider.dart';
@@ -27,11 +28,14 @@ class UserSyncService {
   late final Dio _dio;
 
   UserSyncService({SyncLogger? logger}) : _logger = logger ?? SyncLogger() {
-    final baseUrl = dotenv.env['WOOCOMMERCE_BASE_URL'] ?? '';
+    final baseUrl = (dotenv.env['WOOCOMMERCE_BASE_URL'] ?? '').trim();
+    if (baseUrl.isEmpty) {
+      debugPrint('UserSyncService: WOOCOMMERCE_BASE_URL not set — WooCommerce sync disabled');
+    }
 
     _dio = Dio(
       BaseOptions(
-        baseUrl: '$baseUrl/wp-json/wc/v3',
+        baseUrl: baseUrl.isNotEmpty ? '$baseUrl/wp-json/wc/v3' : 'https://localhost/wp-json/wc/v3',
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 30),
         queryParameters: {

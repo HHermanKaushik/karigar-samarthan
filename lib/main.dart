@@ -14,8 +14,8 @@ Future<void> main() async {
 
   try {
     await dotenv.load(fileName: '.env');
-  } catch (_) {
-    // .env optional during prototype
+  } catch (e) {
+    debugPrint('WARNING: Failed to load .env — API features will be disabled: $e');
   }
 
   await Firebase.initializeApp(

@@ -12,6 +12,9 @@ class Product {
   /// Null for seed/local-only products that haven't been synced yet.
   final int? wooId;
 
+  /// The primary image URL on WooCommerce (used when the local file is gone).
+  final String? wooImageUrl;
+
   const Product({
     required this.id,
     required this.title,
@@ -22,6 +25,7 @@ class Product {
     this.imagePaths = const [],
     this.tags = const [],
     this.wooId,
+    this.wooImageUrl,
   });
 
   Product copyWith({
@@ -33,6 +37,7 @@ class Product {
     List<String>? imagePaths,
     List<String>? tags,
     int? wooId,
+    String? wooImageUrl,
   }) {
     return Product(
       id: id,
@@ -44,6 +49,7 @@ class Product {
       imagePaths: imagePaths ?? this.imagePaths,
       tags: tags ?? this.tags,
       wooId: wooId ?? this.wooId,
+      wooImageUrl: wooImageUrl ?? this.wooImageUrl,
     );
   }
 }

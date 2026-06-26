@@ -186,6 +186,21 @@ class _ProductTile extends StatelessWidget {
     required this.onTap,
   });
 
+  Widget _networkOrPlaceholder(Product p) {
+    if (p.wooImageUrl != null) {
+      return Image.network(
+        p.wooImageUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.image_outlined, size: 42, color: AppColors.primary),
+        ),
+      );
+    }
+    return const Center(
+      child: Icon(Icons.image_outlined, size: 42, color: AppColors.primary),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -212,12 +227,11 @@ class _ProductTile extends StatelessWidget {
                           child: Image.file(
                             File(product.imagePaths.first),
                             fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _networkOrPlaceholder(product),
                           ),
                         )
-                      : const Center(
-                          child: Icon(Icons.image_outlined,
-                              size: 42, color: AppColors.primary),
-                        ),
+                      : _networkOrPlaceholder(product),
                 ),
               ),
               const SizedBox(height: 12),

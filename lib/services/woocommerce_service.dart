@@ -12,11 +12,13 @@ class PublishResult {
   final bool success;
   final String? message;
   final int? productId;
+  final String? imageUrl;
 
   const PublishResult({
     required this.success,
     this.message,
     this.productId,
+    this.imageUrl,
   });
 }
 
@@ -34,7 +36,7 @@ class WooCommerceService {
         _dio = Dio(
           BaseOptions(
             baseUrl:
-                '${dotenv.env['WOOCOMMERCE_BASE_URL'] ?? ''}/wp-json/wc/v3',
+                '${(dotenv.env['WOOCOMMERCE_BASE_URL'] ?? '').trim()}/wp-json/wc/v3',
             connectTimeout: const Duration(seconds: 30),
             receiveTimeout: const Duration(seconds: 30),
             queryParameters: {
@@ -47,7 +49,7 @@ class WooCommerceService {
         _wpDio = Dio(
           BaseOptions(
             baseUrl:
-                '${dotenv.env['WOOCOMMERCE_BASE_URL'] ?? ''}/wp-json/wp/v2',
+                '${(dotenv.env['WOOCOMMERCE_BASE_URL'] ?? '').trim()}/wp-json/wp/v2',
             connectTimeout: const Duration(seconds: 30),
             receiveTimeout: const Duration(seconds: 30),
           ),
@@ -288,9 +290,15 @@ class WooCommerceService {
 
       final response = await _dio.post('/products', data: payload);
 
+      final images = response.data['images'] as List?;
+      final imageUrl = (images != null && images.isNotEmpty)
+          ? (images.first as Map<String, dynamic>)['src'] as String?
+          : null;
+
       return PublishResult(
         success: true,
         productId: response.data['id'] as int?,
+        imageUrl: imageUrl,
       );
     } catch (e, st) {
       await _logger.logError(

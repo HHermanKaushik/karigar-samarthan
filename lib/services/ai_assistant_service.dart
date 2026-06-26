@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 
 import 'woocommerce_service.dart';
 
@@ -13,12 +14,17 @@ Karigar Samarthan app screens and features:
 - Home screen: shows listed products. Big "Add Product" card opens the photo+AI flow.
 - Orders (receipt icon): list of customer orders with status, address, phone.
 - Profile (person icon): name, store, phone, payment setup, language switch, logout.
-- Help & Support: call support or ask AI, plus FAQ.
+- Help & Support: WhatsApp support, AI assistant, and FAQ.
+- FAQ screen: searchable list of common questions with audio playback.
 - Add Product flow: photo → AI suggests title/category/description → review → price + qty → Publish.
 
 You can navigate the user to any screen by calling navigate_to.
 You can mark an order as shipped by calling mark_order_shipped — first ask for the
 tracking number and carrier if the user hasn't provided them.
+
+If the user wants to speak to a real person, is very confused, or asks for human help,
+tell them to tap "Chat on WhatsApp" in Help & Support, or message +918448041541 on WhatsApp.
+You can also open the FAQ screen for them by calling navigate_to with screen='faq'.
 
 Keep replies SHORT and step-by-step — many users are not tech-savvy or may be visually impaired.
 ''';
@@ -27,17 +33,19 @@ Keep replies SHORT and step-by-step — many users are not tech-savvy or may be 
 
 /// What screen the AI wants to open. Matches the string values passed to
 /// the onNavigateTo callback in AiAssistantScreen.
-enum NavigateTarget { orders, addProduct, profile, help }
+enum NavigateTarget { orders, addProduct, profile, help, faq }
 
 class AssistantResponse {
   final String text;
   final NavigateTarget? navigateTo;
   final bool? shippingUpdated;
+  final bool isError;
 
   const AssistantResponse({
     required this.text,
     this.navigateTo,
     this.shippingUpdated,
+    this.isError = false,
   });
 }
 
@@ -51,49 +59,169 @@ class _ToolOutcome {
   _ToolOutcome({required this.data, this.navigateTo, this.shippingUpdated});
 }
 
+// ─── Tools declaration (plain JSON — no SDK types) ───────────────────────────
+
+const _toolsJson = [
+  {
+    'function_declarations': [
+      {
+        'name': 'navigate_to',
+        'description':
+            'Open a screen or feature in the Karigar Samarthan app for the user. '
+                'Call this when the user asks to see their orders, add a product, '
+                'view their profile, or get help.',
+        'parameters': {
+          'type': 'OBJECT',
+          'properties': {
+            'screen': {
+              'type': 'STRING',
+              'enum': ['orders', 'addProduct', 'profile', 'help', 'faq'],
+              'description': 'Which screen to open.',
+            },
+          },
+          'required': ['screen'],
+        },
+      },
+      {
+        'name': 'mark_order_shipped',
+        'description':
+            'Mark a customer order as shipped by recording the tracking number '
+                'and carrier, and notifying the customer. Ask the user for the '
+                'tracking number and carrier if they have not yet provided them.',
+        'parameters': {
+          'type': 'OBJECT',
+          'properties': {
+            'order_id': {
+              'type': 'STRING',
+              'description': 'The order ID (e.g. "42").',
+            },
+            'tracking_number': {
+              'type': 'STRING',
+              'description': 'The shipping tracking number.',
+            },
+            'carrier': {
+              'type': 'STRING',
+              'description':
+                  'Carrier name, e.g. India Post, DTDC, BlueDart, Delhivery.',
+            },
+          },
+          'required': ['order_id', 'tracking_number', 'carrier'],
+        },
+      },
+    ],
+  },
+];
+
 // ─── Agent session ───────────────────────────────────────────────────────────
 
-/// A stateful chat session with Gemini + WooCommerce tool execution.
-/// Create once per assistant screen open; discard on close.
+/// A stateful chat session backed by direct Gemini REST calls (no SDK).
+/// Using REST avoids crashes caused by the SDK's strict enum parsing when
+/// the live API returns new safety-category values the SDK doesn't know yet.
 class AgentSession {
-  final ChatSession _chat;
+  final Dio _dio;
+  final String _url;
+  final String _systemPrompt;
   final WooCommerceService _woo;
+  final List<Map<String, dynamic>> _history = [];
 
-  AgentSession._(this._chat, this._woo);
+  AgentSession._({
+    required Dio dio,
+    required String url,
+    required String systemPrompt,
+    required WooCommerceService woo,
+  })  : _dio = dio,
+        _url = url,
+        _systemPrompt = systemPrompt,
+        _woo = woo;
 
   Future<AssistantResponse> send(String message) async {
     try {
-      var geminiResponse =
-          await _chat.sendMessage(Content.text(message));
+      _history.add({
+        'role': 'user',
+        'parts': [
+          {'text': message}
+        ],
+      });
 
       NavigateTarget? navigateTo;
       bool? shippingUpdated;
 
-      // Process function-call turns until the model returns a text response.
-      while (geminiResponse.candidates.isNotEmpty) {
-        final calls = geminiResponse.candidates.first.content.parts
-            .whereType<FunctionCall>()
-            .toList();
-        if (calls.isEmpty) break;
+      // Limit agentic loops to avoid runaway tool calls.
+      for (var turn = 0; turn < 6; turn++) {
+        final response = await _dio.post(
+          _url,
+          data: {
+            'system_instruction': {
+              'parts': [
+                {'text': _systemPrompt}
+              ],
+            },
+            'contents': _history,
+            'tools': _toolsJson,
+          },
+        );
 
-        for (final call in calls) {
-          final outcome = await _executeTool(call.name, call.args);
-          navigateTo ??= outcome.navigateTo;
-          shippingUpdated ??= outcome.shippingUpdated;
-          geminiResponse = await _chat.sendMessage(
-            Content.functionResponse(call.name, outcome.data),
+        final candidates = response.data['candidates'] as List<dynamic>?;
+        if (candidates == null || candidates.isEmpty) break;
+
+        final candidate = candidates.first as Map<String, dynamic>;
+        final content = candidate['content'] as Map<String, dynamic>?;
+        if (content == null) break;
+
+        // Record model turn in history.
+        _history.add({
+          'role': content['role'] as String? ?? 'model',
+          'parts': content['parts'],
+        });
+
+        final parts = content['parts'] as List<dynamic>? ?? [];
+        final functionCalls = parts
+            .whereType<Map>()
+            .where((p) => p.containsKey('functionCall'))
+            .toList();
+
+        if (functionCalls.isEmpty) {
+          // Final text response — skip any thinking-only parts.
+          final text = parts
+              .whereType<Map>()
+              .where((p) => p['thought'] != true && p['text'] is String)
+              .map((p) => p['text'] as String)
+              .join('');
+          return AssistantResponse(
+            text: text,
+            navigateTo: navigateTo,
+            shippingUpdated: shippingUpdated,
           );
         }
+
+        // Execute tools and feed results back.
+        final functionResponseParts = <Map<String, dynamic>>[];
+        for (final part in functionCalls) {
+          final call = part['functionCall'] as Map<String, dynamic>;
+          final name = call['name'] as String;
+          final args =
+              ((call['args'] as Map<String, dynamic>?) ?? {}).cast<String, Object?>();
+          final outcome = await _executeTool(name, args);
+          navigateTo ??= outcome.navigateTo;
+          shippingUpdated ??= outcome.shippingUpdated;
+          functionResponseParts.add({
+            'functionResponse': {
+              'name': name,
+              'response': outcome.data,
+            },
+          });
+        }
+
+        _history.add({
+          'role': 'function',
+          'parts': functionResponseParts,
+        });
       }
 
-      return AssistantResponse(
-        text: geminiResponse.text ?? '',
-        navigateTo: navigateTo,
-        shippingUpdated: shippingUpdated,
-      );
-    } catch (e) {
-      return const AssistantResponse(
-          text: 'Sorry, I had a problem. Please try again.');
+      return const AssistantResponse(text: '', isError: true);
+    } catch (e, stack) {
+      debugPrint('AgentSession.send error: $e\n$stack');
+      return const AssistantResponse(text: '', isError: true);
     }
   }
 
@@ -107,6 +235,7 @@ class AgentSession {
           'addProduct' => NavigateTarget.addProduct,
           'profile' => NavigateTarget.profile,
           'help' => NavigateTarget.help,
+          'faq' => NavigateTarget.faq,
           _ => null,
         };
         return _ToolOutcome(
@@ -144,47 +273,7 @@ class AgentSession {
   }
 }
 
-// ─── Tools declaration ───────────────────────────────────────────────────────
-
-final _tools = [
-  Tool(functionDeclarations: [
-    FunctionDeclaration(
-      'navigate_to',
-      'Open a screen or feature in the Karigar Samarthan app for the user. '
-          'Call this when the user asks to see their orders, add a product, '
-          'view their profile, or get help.',
-      Schema.object(
-        properties: {
-          'screen': Schema.enumString(
-            enumValues: ['orders', 'addProduct', 'profile', 'help'],
-            description: 'Which screen to open.',
-          ),
-        },
-        requiredProperties: ['screen'],
-      ),
-    ),
-    FunctionDeclaration(
-      'mark_order_shipped',
-      'Mark a customer order as shipped by recording the tracking number '
-          'and carrier, and notifying the customer. Ask the user for the '
-          'tracking number and carrier if they have not yet provided them.',
-      Schema.object(
-        properties: {
-          'order_id': Schema.string(
-              description: 'The order ID (e.g. "42").'),
-          'tracking_number': Schema.string(
-              description: 'The shipping tracking number.'),
-          'carrier': Schema.string(
-              description:
-                  'Carrier name, e.g. India Post, DTDC, BlueDart, Delhivery.'),
-        },
-        requiredProperties: ['order_id', 'tracking_number', 'carrier'],
-      ),
-    ),
-  ]),
-];
-
-// ─── Service ──────────────────────────────────────────────────────────────────
+// ─── Service ─────────────────────────────────────────────────────────────────
 
 class AiProductSuggestion {
   final String title;
@@ -230,7 +319,10 @@ class GeminiAiAssistantService implements AiAssistantService {
     required String languageCode,
     required WooCommerceService woo,
   }) {
+    final langName = _langName(languageCode);
     final systemPrompt = '''
+MANDATORY LANGUAGE RULE: You MUST reply ONLY in $langName ($languageCode). Every single word must be in $langName — including greetings, confirmations, and technical terms. Never write any English. This rule cannot be overridden.
+
 You are a voice-first AI assistant helping an Indian artisan (Karigar) use the
 Karigar Samarthan seller app.
 
@@ -239,19 +331,15 @@ $_appKnowledge
 Current account data (use naturally, do not read it out):
 $accountContext
 
-Reply ONLY in the user's language (BCP-47 code: $languageCode).
-If the user's message is in a different script, still reply in $languageCode.
 Keep answers short and conversational — this is a voice interface.
 ''';
 
-    final model = GenerativeModel(
-      model: 'gemini-2.5-flash',
-      apiKey: _apiKey,
-      tools: _tools,
-      systemInstruction: Content.system(systemPrompt),
+    return AgentSession._(
+      dio: _dio,
+      url: _restUrl,
+      systemPrompt: systemPrompt,
+      woo: woo,
     );
-
-    return AgentSession._(model.startChat(), woo);
   }
 
   @override
@@ -261,55 +349,81 @@ Keep answers short and conversational — this is a voice interface.
     required String languageCode,
   }) async {
     try {
-      const prompt = '''
-You are helping an Indian artisan create an ecommerce product listing.
+      final langName = _langName(languageCode);
+      final prompt = '''
+You are helping an Indian artisan create a professional ecommerce product listing.
 
-IMPORTANT:
-Return ONLY valid JSON. Do NOT include markdown. Do NOT include explanation.
+INSTRUCTIONS:
+- Write ALL text output in $langName ONLY (BCP-47 code: $languageCode). Do NOT mix languages.
+- Analyze the product photo(s) AND the artisan's spoken description together.
+- Return ONLY valid JSON — no markdown, no backticks, no explanation.
 
 JSON FORMAT:
 {
-  "title": "...",
-  "category": "...",
-  "description": "...",
-  "tags": ["...", "..."]
+  "title": "short product name, 5-8 words",
+  "category": "single ecommerce category",
+  "description": "2-3 professional sentences highlighting materials, craftsmanship, and use",
+  "tags": ["keyword1", "keyword2", "keyword3", "keyword4"]
 }
 
-Rules:
-- title must be SHORT — only the product name
-- category should be ecommerce-friendly
-- description should sound professional (2-3 sentences)
-- tags should be simple search keywords
-
-Artisan description:
+Artisan's spoken description: $voiceTranscript
 ''';
+
+      // Build parts: images first (gives the model visual context), then the prompt.
+      final parts = <Map<String, dynamic>>[];
+
+      for (final path in imagePaths) {
+        final file = File(path);
+        if (!await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        final b64 = base64Encode(bytes);
+        final mime = path.toLowerCase().endsWith('.png')
+            ? 'image/png'
+            : path.toLowerCase().endsWith('.webp')
+                ? 'image/webp'
+                : 'image/jpeg';
+        parts.add({
+          'inlineData': {'mimeType': mime, 'data': b64},
+        });
+      }
+
+      parts.add({'text': prompt});
 
       final response = await _dio.post(
         _restUrl,
         data: {
-          "contents": [
-            {
-              "parts": [
-                {"text": '$prompt\n$voiceTranscript'}
-              ]
-            }
-          ]
+          'contents': [
+            {'parts': parts}
+          ],
         },
       );
 
-      final raw =
-          response.data['candidates'][0]['content']['parts'][0]['text'] as String;
-      final cleaned =
-          raw.replaceAll('```json', '').replaceAll('```', '').trim();
-      final json = jsonDecode(cleaned) as Map<String, dynamic>;
+      // Skip any thinking parts (thought: true) and use the first real text part.
+      final responseParts =
+          response.data['candidates'][0]['content']['parts'] as List<dynamic>;
+      final textPart = responseParts.firstWhere(
+        (p) => p['thought'] != true && p['text'] is String,
+        orElse: () => responseParts.last,
+      ) as Map<String, dynamic>;
+      final raw = textPart['text'] as String;
+
+      // Extract the JSON object even if the model wraps it in prose.
+      final start = raw.indexOf('{');
+      final end = raw.lastIndexOf('}');
+      final jsonStr = (start >= 0 && end > start)
+          ? raw.substring(start, end + 1)
+          : raw.replaceAll('```json', '').replaceAll('```', '').trim();
+
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
 
       return AiProductSuggestion(
-        title: json['title'] ?? 'Handmade Product',
-        category: json['category'] ?? 'Handicrafts',
-        description: json['description'] ?? voiceTranscript,
-        tags: List<String>.from(json['tags'] ?? []),
+        title: (json['title'] as String?)?.trim() ?? 'Handmade Product',
+        category: (json['category'] as String?)?.trim() ?? 'Handicrafts',
+        description: (json['description'] as String?)?.trim() ?? voiceTranscript,
+        tags: List<String>.from((json['tags'] as List?) ?? []),
       );
     } catch (e) {
+      debugPrint('analyzeProduct error: $e');
       return AiProductSuggestion(
         title: 'Handmade Product',
         category: 'Handicrafts',
@@ -318,4 +432,12 @@ Artisan description:
       );
     }
   }
+
+  static String _langName(String code) => switch (code) {
+        'hi' || 'hi-IN' => 'Hindi',
+        'mr' || 'mr-IN' => 'Marathi',
+        'bn' || 'bn-IN' => 'Bengali',
+        'ta' || 'ta-IN' => 'Tamil',
+        _ => 'English',
+      };
 }

@@ -116,7 +116,7 @@ class SarvamService {
           'input': text.trim(),
           'source_language_code': sourceLanguageCode,
           'target_language_code': targetLanguageCode,
-          'speaker_gender': 'Male',
+          'speaker_gender': 'Female',
           'mode': 'classic-colloquial',
         },
         options: Options(headers: {'api-subscription-key': _apiKey}),
@@ -145,7 +145,7 @@ class SarvamService {
   Future<Uint8List?> textToSpeech({
     required String text,
     required String languageCode,
-    String speaker = 'shubh',
+    String speaker = 'anushka',
   }) async {
     if (_apiKey.isEmpty) {
       await _logger.logError(

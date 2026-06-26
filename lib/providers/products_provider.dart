@@ -60,6 +60,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
       imagePaths: List<String>.from(d['imagePaths'] ?? []),
       tags: List<String>.from(d['tags'] ?? []),
       wooId: d['wooId'] as int?,
+      wooImageUrl: d['wooImageUrl'] as String?,
     );
   }
 
@@ -72,6 +73,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
         'imagePaths': p.imagePaths,
         'tags': p.tags,
         if (p.wooId != null) 'wooId': p.wooId,
+        if (p.wooImageUrl != null) 'wooImageUrl': p.wooImageUrl,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 }

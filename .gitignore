@@ -1,0 +1,42 @@
+```gitignore
+# Environment files
+.env
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+build/
+
+# Generated plugin registrants
+**/generated_plugin_registrant.*
+
+# Flutter platform-generated files
+**/Flutter/ephemeral/
+**/Pods/
+
+# Xcode
+**/xcuserdata/
+**/*.xcuserstate
+**/*.xcworkspace/xcuserdata/
+
+# Android
+**/local.properties
+**/captures/
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Misc
+coverage/
+```
+
