@@ -140,40 +140,60 @@ The application minimizes typing, reduces navigation complexity, and presents cl
 
 ## Screenshots
 
+### Login & Registration
 
-* Login & Registration
-<img width="1080" height="2395" alt="Screenshot_20260630_174637" src="https://github.com/user-attachments/assets/4ddf6b2c-5b54-41ab-9f14-a95446bf398c" />
-<img width="1080" height="2340" alt="Screenshot_20260630_174652" src="https://github.com/user-attachments/assets/814e718d-21ba-4db7-aa46-155a6a35413f" />
-<img width="1080" height="2340" alt="Screenshot_20260630_174659" src="https://github.com/user-attachments/assets/98f2ceaf-102e-4c04-b3d5-56240b62ec41" />
-<img width="1080" height="2340" alt="Screenshot_20260630_174717" src="https://github.com/user-attachments/assets/fb756ce2-9548-443e-bab1-655b02c51fb4" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4ddf6b2c-5b54-41ab-9f14-a95446bf398c" width="220"/>
+  <img src="https://github.com/user-attachments/assets/814e718d-21ba-4db7-aa46-155a6a35413f" width="220"/>
+  <img src="https://github.com/user-attachments/assets/98f2ceaf-102e-4c04-b3d5-56240b62ec41" width="220"/>
+  <img src="https://github.com/user-attachments/assets/fb756ce2-9548-443e-bab1-655b02c51fb4" width="220"/>
+</p>
 
-* Home Screen
-<img width="1080" height="2340" alt="Screenshot_20260630_174730" src="https://github.com/user-attachments/assets/155ee318-2259-4025-a1b0-853e92a6d929" />
+### Home Screen
 
-* AI Assistant
-<img width="1080" height="2340" alt="Screenshot_20260630_174807" src="https://github.com/user-attachments/assets/adad5159-741a-4738-8fa7-db3f19c2f144" />
-<img width="1080" height="2340" alt="Screenshot_20260630_174818" src="https://github.com/user-attachments/assets/7fa27a99-5744-4e5e-b1f3-d91a9571b661" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/155ee318-2259-4025-a1b0-853e92a6d929" width="220"/>
+</p>
 
+### AI Assistant
 
-* Product Creation
-<img width="1080" height="2340" alt="Screenshot_20260630_174844" src="https://github.com/user-attachments/assets/6a067ab5-2aaa-44da-9bd0-cfa83df43046" />
-<img width="1080" height="2340" alt="Screenshot_20260630_174936" src="https://github.com/user-attachments/assets/db2c60ee-ef05-47da-9cae-d853076f9997" />
-<img width="1080" height="2340" alt="Screenshot_20260630_175053" src="https://github.com/user-attachments/assets/d2ec4e1f-af7b-4672-96e4-95c600753130" />
-<img width="1080" height="2340" alt="Screenshot_20260630_175128" src="https://github.com/user-attachments/assets/28654888-a4e7-4b0d-991d-488297050bb1" />
-<img width="1080" height="3117" alt="Screenshot_20260630_175145" src="https://github.com/user-attachments/assets/bb48146a-8b15-49a8-babb-0e9ce11bf207" />
-<img width="1080" height="2340" alt="Screenshot_20260630_175236" src="https://github.com/user-attachments/assets/0966e8f4-1f86-4de9-903b-0b6912e82f14" />
-  
-* Product Management
-<img width="1080" height="2340" alt="Screenshot_20260630_175834" src="https://github.com/user-attachments/assets/98668491-ebe5-4f75-9fd5-9a14c9dd8f80" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/adad5159-741a-4738-8fa7-db3f19c2f144" width="220"/>
+  <img src="https://github.com/user-attachments/assets/7fa27a99-5744-4e5e-b1f3-d91a9571b661" width="220"/>
+</p>
 
-  
-* Orders
-<img width="1080" height="2312" alt="Screenshot_20260630_175553" src="https://github.com/user-attachments/assets/b1e4ca14-2573-468d-9811-37887c2c24e7" />
-<img width="1080" height="2340" alt="Screenshot_20260630_175824" src="https://github.com/user-attachments/assets/8c598d3f-4d37-4dd2-a089-17afeac3695c" />
+### Product Creation
 
-  
-* Profile
-<img width="1080" height="2312" alt="Screenshot_20260630_174830" src="https://github.com/user-attachments/assets/7cbd64b9-bd5b-4427-be1d-10ba2a8f8131" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6a067ab5-2aaa-44da-9bd0-cfa83df43046" width="220"/>
+  <img src="https://github.com/user-attachments/assets/db2c60ee-ef05-47da-9cae-d853076f9997" width="220"/>
+  <img src="https://github.com/user-attachments/assets/d2ec4e1f-af7b-4672-96e4-95c600753130" width="220"/>
+  <img src="https://github.com/user-attachments/assets/28654888-a4e7-4b0d-991d-488297050bb1" width="220"/>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/bb48146a-8b15-49a8-babb-0e9ce11bf207" width="220"/>
+  <img src="https://github.com/user-attachments/assets/0966e8f4-1f86-4de9-903b-0b6912e82f14" width="220"/>
+</p>
+
+### Product Management
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/98668491-ebe5-4f75-9fd5-9a14c9dd8f80" width="220"/>
+</p>
+
+### Orders
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b1e4ca14-2573-468d-9811-37887c2c24e7" width="220"/>
+  <img src="https://github.com/user-attachments/assets/8c598d3f-4d37-4dd2-a089-17afeac3695c" width="220"/>
+</p>
+
+### Profile
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/7cbd64b9-bd5b-4427-be1d-10ba2a8f8131" width="220"/>
+</p>
 
 
 ---
