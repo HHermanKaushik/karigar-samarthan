@@ -39,6 +39,7 @@ class _State extends ConsumerState<EditProductScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
   bool _saving = false;
+  bool _archiving = false;
 
   @override
   void dispose() {
@@ -97,6 +98,33 @@ class _State extends ConsumerState<EditProductScreen> {
       ));
     }
 
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _archive() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archive Product'),
+        content: const Text(
+          'This product will be hidden from your list. It will remain on your WooCommerce store and can be restored from there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _archiving = true);
+    await ref.read(productsProvider.notifier).archive(widget.product.id);
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -298,15 +326,26 @@ class _State extends ConsumerState<EditProductScreen> {
             ],
           ),
           padding: const EdgeInsets.all(12),
-          child: ElevatedButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    height: 22,
-                    width: 22,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : Text(tr('saveProduct')),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: (_saving || _archiving) ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text(tr('saveProduct')),
+              ),
+              TextButton.icon(
+                onPressed: (_saving || _archiving) ? null : _archive,
+                icon: const Icon(Icons.archive_outlined, size: 18),
+                label: const Text('Archive Product'),
+                style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+              ),
+            ],
           ),
         ),
       ),

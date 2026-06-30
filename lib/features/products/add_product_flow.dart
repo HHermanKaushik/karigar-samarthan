@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,6 +12,7 @@ import '../../models/product.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../providers/translations_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../services/ai_assistant_service.dart';
 import '../../services/service_providers.dart';
 
@@ -28,6 +30,7 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   String _voiceTranscript = '';
   bool _listening = false;
   bool _processing = false;
+  bool _sttReady = false;
   AiProductSuggestion? _suggestion;
 
   final _title = TextEditingController();
@@ -35,6 +38,25 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   final _description = TextEditingController();
   final _price = TextEditingController();
   final _qty = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _initStt();
+  }
+
+  Future<void> _initStt() async {
+    final stt = ref.read(speechToTextProvider);
+    final ok = await stt.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+    );
+    if (ok && mounted) setState(() => _sttReady = true);
+  }
 
   @override
   void dispose() {
@@ -82,8 +104,7 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
       return;
     }
 
-    final ok = await stt.initialize();
-    if (!ok) {
+    if (!_sttReady) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Microphone unavailable')));
@@ -97,16 +118,19 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
   }
 
   Future<void> _listenToNumber(TextEditingController controller) async {
+    // Don't interrupt the product description recording.
+    if (_listening) return;
+
     final tr = ref.read(trProvider);
     final stt = ref.read(speechToTextProvider);
 
     if (stt.isListening) {
       await stt.stop();
-      return;
+      // Small pause to let the engine fully reset before re-using it.
+      await Future.delayed(const Duration(milliseconds: 150));
     }
 
-    final ok = await stt.initialize();
-    if (!ok) {
+    if (!_sttReady) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(tr('micUnavailable')),
@@ -120,8 +144,9 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
       duration: const Duration(seconds: 5),
     ));
 
-    stt.listen(
+    final started = await stt.listen(
       listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
       onResult: (r) {
         if (r.finalResult) {
           setState(() => controller.text =
@@ -129,6 +154,13 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
         }
       },
     );
+
+    if (!started && mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tr('micUnavailable')),
+      ));
+    }
   }
 
   // ── AI ────────────────────────────────────────────────────────────────
@@ -215,11 +247,16 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
     try {
       ref.read(productsProvider.notifier).add(product);
       final woo = ref.read(wooServiceProvider);
+      final user = ref.read(userProvider);
       final result = await woo.publishProduct(
         title: _title.text.trim(),
         description: _description.text.trim(),
         price: _price.text.trim(),
         imageFile: File(_imagePaths.first),
+        karigarUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        karigarName: user.fullName,
+        upiId: user.upiId,
+        language: ref.read(languageProvider).code,
       );
 
       if (!mounted) return;

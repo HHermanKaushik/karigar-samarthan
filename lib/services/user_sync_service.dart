@@ -81,6 +81,7 @@ class UserSyncService {
         'phone': profile.phone,
         'role': profile.role,
         'paymentSetup': profile.paymentSetup,
+        'upiId': profile.upiId,
         if (wooCustomerId != null) 'wooCustomerId': wooCustomerId,
         'updatedAt': FieldValue.serverTimestamp(),
         if (!existing.exists) 'createdAt': FieldValue.serverTimestamp(),

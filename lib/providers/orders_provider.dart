@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -7,8 +9,10 @@ import '../models/order.dart';
 
 class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
   OrdersNotifier() : super([]) {
-    _loadFromFirestore();
+    _init();
   }
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
 
   static FirebaseFirestore get _db => FirebaseFirestore.instanceFor(
         app: Firebase.app(),
@@ -22,17 +26,40 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  Future<void> _loadFromFirestore() async {
+  void _init() {
+    if (!_isAuthenticated) return;
+    _sub = _db
+        .collection('users')
+        .doc(_uid)
+        .collection('orders')
+        .orderBy('placedAt', descending: true)
+        .snapshots()
+        .listen(
+          (snap) {
+            state = snap.docs.map(_fromDoc).toList();
+          },
+          onError: (_) {},
+        );
+  }
+
+  /// Forces a one-time re-fetch (e.g. pull-to-refresh).
+  Future<void> refresh() async {
     if (!_isAuthenticated) return;
     try {
       final snap = await _db
           .collection('users')
           .doc(_uid)
           .collection('orders')
+          .orderBy('placedAt', descending: true)
           .get();
-      state = snap.docs.map(_fromDoc).toList()
-        ..sort((a, b) => b.placedAt.compareTo(a.placedAt));
+      state = snap.docs.map(_fromDoc).toList();
     } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
   }
 
   static CustomerOrder _fromDoc(
@@ -41,10 +68,10 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
     return CustomerOrder(
       id: doc.id,
       productTitle: d['productTitle'] ?? '',
+      productImage: d['productImage'] as String?,
       quantity: (d['quantity'] as num?)?.toInt() ?? 1,
       total: (d['total'] as num?)?.toDouble() ?? 0,
-      placedAt:
-          (d['placedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      placedAt: (d['placedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       status: OrderStatus.values.firstWhere(
         (s) => s.name == d['status'],
         orElse: () => OrderStatus.placed,
@@ -52,7 +79,6 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
       customerName: d['customerName'] ?? '',
       shippingAddress: d['shippingAddress'] ?? '',
       customerPhone: d['customerPhone'] ?? '',
-      productImage: d['productImage'] as String?,
     );
   }
 }

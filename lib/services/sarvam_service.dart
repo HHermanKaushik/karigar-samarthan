@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'sync_logger.dart';
@@ -174,8 +173,18 @@ class SarvamService {
         options: Options(headers: {'api-subscription-key': _apiKey}),
       );
 
-      final audios = response.data['audios'] as List?;
-      if (audios == null || audios.isEmpty) return null;
+      // Sarvam may return data as a String if the server sends
+      // Content-Type: text/plain — decode it ourselves in that case.
+      final raw = response.data;
+      final Map<String, dynamic>? body = raw is Map
+          ? raw.cast()
+          : (raw is String ? (jsonDecode(raw) as Map?)?.cast() : null);
+
+      final audios = body?['audios'] as List?;
+      if (audios == null || audios.isEmpty) {
+        debugPrint('SarvamTTS: response missing "audios" field — body=$body');
+        return null;
+      }
 
       return base64Decode(audios.first as String);
     } catch (e, st) {

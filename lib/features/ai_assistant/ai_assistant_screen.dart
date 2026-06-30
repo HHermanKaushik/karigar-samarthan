@@ -1,13 +1,12 @@
-import 'dart:async';
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/services/tts_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/voice_button.dart';
 import '../../models/app_language.dart';
@@ -41,7 +40,6 @@ class _State extends ConsumerState<AiAssistantScreen> {
   final _input = TextEditingController();
   final _scrollController = ScrollController();
   final _recorder = FlutterSoundRecorder();
-  final _player = AudioPlayer();
 
   bool _recorderReady = false;
   String? _recordingPath;
@@ -73,7 +71,7 @@ class _State extends ConsumerState<AiAssistantScreen> {
     _input.dispose();
     _scrollController.dispose();
     _recorder.closeRecorder();
-    _player.dispose();
+    TTSService.stop();
     super.dispose();
   }
 
@@ -182,16 +180,15 @@ $orderLines
   }
 
   Future<void> _speak(String text, AppLanguage lang) async {
-    final sarvam = ref.read(sarvamServiceProvider);
-    final audioBytes = await sarvam.textToSpeech(
-      text: text,
-      languageCode: lang.sarvamCode,
-    );
-    if (audioBytes == null || !mounted) return;
     try {
-      await _player.stop();
-      await _player.play(BytesSource(audioBytes));
-    } catch (_) {}
+      await TTSService.speak(text: text, languageCode: lang.sarvamCode);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Audio error: $e'), duration: const Duration(seconds: 3)),
+        );
+      }
+    }
   }
 
   Future<void> _toggleVoice() async {

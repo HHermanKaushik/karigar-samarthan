@@ -15,6 +15,10 @@ class Product {
   /// The primary image URL on WooCommerce (used when the local file is gone).
   final String? wooImageUrl;
 
+  /// Soft-deleted in the app. Archived products are hidden from the product
+  /// list but remain on WooCommerce so no store data is lost.
+  final bool archived;
+
   const Product({
     required this.id,
     required this.title,
@@ -26,6 +30,7 @@ class Product {
     this.tags = const [],
     this.wooId,
     this.wooImageUrl,
+    this.archived = false,
   });
 
   Product copyWith({
@@ -38,6 +43,7 @@ class Product {
     List<String>? tags,
     int? wooId,
     String? wooImageUrl,
+    bool? archived,
   }) {
     return Product(
       id: id,
@@ -50,6 +56,7 @@ class Product {
       tags: tags ?? this.tags,
       wooId: wooId ?? this.wooId,
       wooImageUrl: wooImageUrl ?? this.wooImageUrl,
+      archived: archived ?? this.archived,
     );
   }
 }

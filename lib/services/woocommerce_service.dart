@@ -242,11 +242,69 @@ class WooCommerceService {
     }
   }
 
+  /// Returns the WooCommerce IDs of all non-deleted products (any status).
+  /// Returns an empty list on network error — callers treat this as "unknown"
+  /// and must not delete local data in that case.
+  Future<List<int>> fetchActiveProductIds() async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/products',
+        queryParameters: {'per_page': 100, 'status': 'any'},
+      );
+      return (response.data ?? [])
+          .map((p) => p['id'] as int?)
+          .whereType<int>()
+          .toList();
+    } catch (e, st) {
+      await _logger.logError('wc_fetch_product_ids', e, stackTrace: st);
+      return [];
+    }
+  }
+
+  /// Updates karigar meta on every product in [wooIds] without touching any
+  /// other metadata. WooCommerce REST API uses merge semantics for meta_data —
+  /// only the keys included in the request are changed.
+  ///
+  /// Always writes _ks_upi_id. Writes _ks_karigar_uid when [karigarUid] is
+  /// provided, which is required for the Cloud Function order-attribution logic.
+  Future<bool> syncUpiId({
+    required List<int> wooIds,
+    required String upiId,
+    String karigarUid = '',
+  }) async {
+    if (wooIds.isEmpty) return true;
+    final meta = <Map<String, String>>[
+      {'key': '_ks_upi_id', 'value': upiId},
+      if (karigarUid.isNotEmpty) {'key': '_ks_karigar_uid', 'value': karigarUid},
+    ];
+    final results = await Future.wait(
+      wooIds.map((id) async {
+        try {
+          await _dio.put('/products/$id', data: {'meta_data': meta});
+          return true;
+        } catch (e, st) {
+          await _logger.logError(
+            'wc_sync_upi_id',
+            e,
+            stackTrace: st,
+            context: {'wooId': id, 'upiId': upiId},
+          );
+          return false;
+        }
+      }),
+    );
+    return results.every((r) => r);
+  }
+
   Future<PublishResult> publishProduct({
     required String title,
     required String description,
     required String price,
     required File imageFile,
+    String karigarUid = '',
+    String karigarName = '',
+    String upiId = '',
+    String language = '',
   }) async {
     // Prefer WordPress media upload (gives a persistent mediaId).
     // Falls back to Firebase Storage URL when WP credentials are absent or upload fails.
@@ -286,6 +344,12 @@ class WooCommerceService {
         'description': description,
         'status': 'publish',
         'images': [imageEntry],
+        'meta_data': [
+          {'key': '_ks_karigar_uid', 'value': karigarUid},
+          {'key': '_ks_karigar_name', 'value': karigarName},
+          {'key': '_ks_upi_id', 'value': upiId},
+          {'key': '_ks_language', 'value': language},
+        ],
       };
 
       final response = await _dio.post('/products', data: payload);

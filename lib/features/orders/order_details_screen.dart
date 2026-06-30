@@ -1,15 +1,132 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/order.dart';
+import '../../services/service_providers.dart';
 
-class OrderDetailsScreen extends StatelessWidget {
+class OrderDetailsScreen extends ConsumerStatefulWidget {
   final CustomerOrder order;
   const OrderDetailsScreen({super.key, required this.order});
 
   @override
+  ConsumerState<OrderDetailsScreen> createState() => _OrderDetailsScreenState();
+}
+
+class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
+  bool _shipping = false;
+
+  Future<void> _markShipped() async {
+    final trackingController = TextEditingController();
+    final carrierController = TextEditingController(text: 'India Post');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as Shipped'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: trackingController,
+              decoration: const InputDecoration(
+                labelText: 'Tracking Number *',
+                hintText: 'e.g. EA123456789IN',
+              ),
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: carrierController,
+              decoration: const InputDecoration(
+                labelText: 'Carrier',
+                hintText: 'e.g. India Post, DTDC, BlueDart',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (trackingController.text.trim().isEmpty) return;
+              Navigator.of(ctx).pop(true);
+            },
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final tracking = trackingController.text.trim();
+    final carrier = carrierController.text.trim().isEmpty
+        ? 'India Post'
+        : carrierController.text.trim();
+
+    setState(() => _shipping = true);
+
+    try {
+      final wooId = int.tryParse(widget.order.id);
+      bool wooOk = false;
+      if (wooId != null) {
+        wooOk = await ref.read(wooServiceProvider).markOrderShipped(
+          wooOrderId: wooId,
+          trackingNumber: tracking,
+          carrier: carrier,
+        );
+      }
+
+      // Update Firestore immediately so the orders list reflects the new status
+      // without waiting for a WooCommerce webhook.
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isNotEmpty) {
+        final db = FirebaseFirestore.instanceFor(
+          app: Firebase.app(),
+          databaseId: 'karigar',
+        );
+        await db
+            .collection('users')
+            .doc(uid)
+            .collection('orders')
+            .doc(widget.order.id)
+            .update({
+          'status': 'shipped',
+          'wooStatus': 'completed',
+          'trackingNumber': tracking,
+          'carrier': carrier,
+        });
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(wooOk
+            ? 'Order marked as shipped. Customer notified via WooCommerce.'
+            : 'Marked as shipped in app. WooCommerce update failed — check your connection.'),
+        duration: const Duration(seconds: 4),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _shipping = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
@@ -46,8 +163,7 @@ class OrderDetailsScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(order.customerName,
-                          style:
-                              const TextStyle(fontWeight: FontWeight.w600)),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 4),
                       Text(order.shippingAddress),
                       const SizedBox(height: 4),
@@ -82,7 +198,7 @@ class OrderDetailsScreen extends StatelessWidget {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.image_outlined,
@@ -98,7 +214,7 @@ class OrderDetailsScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.accent.withOpacity(0.08),
+              color: AppColors.accent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
@@ -113,23 +229,42 @@ class OrderDetailsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text(
-                        'AI Assistant will ask for the tracking number shortly.')),
-              );
-              Navigator.of(context).pop();
-            },
-            icon: const Icon(Icons.local_shipping_outlined),
-            label: const Text('Mark as Shipped'),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Once you mark an order as "shipped", our AI Assistant will ask for the Tracking Number. Payment is released once it is delivered to the customer.',
-            style: TextStyle(color: AppColors.textMuted),
-          ),
+          if (order.status != OrderStatus.shipped &&
+              order.status != OrderStatus.delivered)
+            ElevatedButton.icon(
+              onPressed: _shipping ? null : _markShipped,
+              icon: _shipping
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.local_shipping_outlined),
+              label: Text(_shipping ? 'Updating…' : 'Mark as Shipped'),
+            ),
+          if (order.status == OrderStatus.shipped ||
+              order.status == OrderStatus.delivered)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.local_shipping,
+                      color: AppColors.primary, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    order.status == OrderStatus.delivered
+                        ? 'Delivered'
+                        : 'Shipped',
+                    style: const TextStyle(
+                        color: AppColors.primary, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

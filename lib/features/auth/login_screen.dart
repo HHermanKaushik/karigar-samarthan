@@ -153,6 +153,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 phone: d['phone'] ?? '',
                 role: d['role'] ?? 'Master Artisan',
                 paymentSetup: d['paymentSetup'] as bool? ?? false,
+                upiId: d['upiId'] as String? ?? '',
               ));
         } catch (e) {
           debugPrint('login: saveLocal failed (non-fatal): $e');

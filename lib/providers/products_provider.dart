@@ -29,7 +29,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
     if (!_isAuthenticated) return;
     try {
       final snap = await _col.get();
-      state = snap.docs.map(_fromDoc).toList();
+      state = snap.docs.map(_fromDoc).where((p) => !p.archived).toList();
     } catch (_) {}
   }
 
@@ -43,9 +43,36 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
     if (_isAuthenticated) _col.doc(p.id).set(_toMap(p));
   }
 
-  void remove(String id) {
-    state = state.where((x) => x.id != id).toList();
-    if (_isAuthenticated) _col.doc(id).delete();
+  Future<void> archive(String id) async {
+    state = state.where((p) => p.id != id).toList();
+    if (_isAuthenticated) {
+      await _col.doc(id).update({'archived': true});
+    }
+  }
+
+  /// Reloads from Firestore and removes any product whose WooCommerce listing
+  /// no longer exists. [activeWooIds] comes from WooCommerceService; if it is
+  /// empty (network error) no deletions are performed so local data is safe.
+  Future<void> refresh(List<int> activeWooIds) async {
+    if (!_isAuthenticated) return;
+    try {
+      final snap = await _col.get();
+      final fresh = snap.docs.map(_fromDoc).toList();
+
+      if (activeWooIds.isNotEmpty) {
+        for (final p in fresh) {
+          if (p.wooId != null && !activeWooIds.contains(p.wooId)) {
+            await _col.doc(p.id).delete();
+          }
+        }
+        state = fresh
+            .where((p) => p.wooId == null || activeWooIds.contains(p.wooId))
+            .where((p) => !p.archived)
+            .toList();
+      } else {
+        state = fresh.where((p) => !p.archived).toList();
+      }
+    } catch (_) {}
   }
 
   static Product _fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
@@ -61,6 +88,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
       tags: List<String>.from(d['tags'] ?? []),
       wooId: d['wooId'] as int?,
       wooImageUrl: d['wooImageUrl'] as String?,
+      archived: d['archived'] as bool? ?? false,
     );
   }
 
@@ -74,6 +102,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
         'tags': p.tags,
         if (p.wooId != null) 'wooId': p.wooId,
         if (p.wooImageUrl != null) 'wooImageUrl': p.wooImageUrl,
+        'archived': p.archived,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 }

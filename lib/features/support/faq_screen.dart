@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/services/tts_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/voice_button.dart';
 import '../../providers/language_provider.dart';
@@ -213,7 +213,6 @@ class FaqScreen extends ConsumerStatefulWidget {
 class _FaqScreenState extends ConsumerState<FaqScreen> {
   final _searchController = TextEditingController();
   final _recorder = FlutterSoundRecorder();
-  final _player = AudioPlayer();
 
   String _searchQuery = '';
   bool _listening = false;
@@ -225,21 +224,13 @@ class _FaqScreenState extends ConsumerState<FaqScreen> {
   @override
   void initState() {
     super.initState();
-    _initRecorder();
-  }
-
-  Future<void> _initRecorder() async {
-    final status = await Permission.microphone.request();
-    if (status != PermissionStatus.granted) return;
-    await _recorder.openRecorder();
-    if (mounted) setState(() => _recorderReady = true);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _recorder.closeRecorder();
-    _player.dispose();
+    TTSService.stop();
     super.dispose();
   }
 
@@ -255,29 +246,21 @@ class _FaqScreenState extends ConsumerState<FaqScreen> {
 
   Future<void> _playAnswer(_FaqItem item) async {
     if (_playingItem == item) {
-      await _player.stop();
+      await TTSService.stop();
       if (mounted) setState(() => _playingItem = null);
       return;
     }
-    await _player.stop();
+    await TTSService.stop();
     if (mounted) setState(() => _playingItem = item);
 
     final lang = ref.read(languageProvider);
-    final sarvam = ref.read(sarvamServiceProvider);
-    final audio = await sarvam.textToSpeech(
+    await TTSService.speak(
       text: item.a(lang.code),
       languageCode: lang.sarvamCode,
+      onComplete: () {
+        if (mounted) setState(() => _playingItem = null);
+      },
     );
-
-    if (audio == null || !mounted) {
-      if (mounted) setState(() => _playingItem = null);
-      return;
-    }
-
-    await _player.play(BytesSource(audio));
-    _player.onPlayerComplete.first.then((_) {
-      if (mounted) setState(() => _playingItem = null);
-    });
   }
 
   Future<void> _toggleVoiceSearch() async {

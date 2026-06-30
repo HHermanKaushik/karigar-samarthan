@@ -9,9 +9,10 @@ import '../../models/product.dart';
 import '../../providers/products_provider.dart';
 import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../services/service_providers.dart';
 import '../products/edit_product_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback onAddProduct;
   final VoidCallback onOrders;
   final VoidCallback onProfile;
@@ -28,7 +29,27 @@ class HomeScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Sync with WooCommerce after the first frame so the local Firestore
+    // snapshot renders immediately, then stale/deleted products are removed.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncProducts());
+  }
+
+  Future<void> _syncProducts() async {
+    final woo = ref.read(wooServiceProvider);
+    final activeIds = await woo.fetchActiveProductIds();
+    if (!mounted) return;
+    await ref.read(productsProvider.notifier).refresh(activeIds);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(userProvider);
     final products = ref.watch(productsProvider);
     final tr = ref.watch(trProvider);
@@ -40,17 +61,20 @@ class HomeScreen extends ConsumerWidget {
     }
 
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: RefreshIndicator(
+        onRefresh: _syncProducts,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             /// TOP BAR
             Row(
               children: [
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: onAssistant,
+                    onPressed: widget.onAssistant,
                     icon: const Icon(Icons.smart_toy_outlined,
                         color: AppColors.primary),
                     label: Text(tr('askAiAssistant'),
@@ -61,7 +85,7 @@ class HomeScreen extends ConsumerWidget {
                   button: true,
                   label: tr('helpAndSupport'),
                   child: IconButton(
-                    onPressed: onHelp,
+                    onPressed: widget.onHelp,
                     icon: const Icon(Icons.help_outline,
                         color: AppColors.primary),
                   ),
@@ -70,7 +94,7 @@ class HomeScreen extends ConsumerWidget {
                   button: true,
                   label: tr('viewEditAccount'),
                   child: InkWell(
-                    onTap: onProfile,
+                    onTap: widget.onProfile,
                     borderRadius: BorderRadius.circular(24),
                     child: const Padding(
                       padding: EdgeInsets.all(4),
@@ -167,8 +191,9 @@ class HomeScreen extends ConsumerWidget {
 
             const SizedBox(height: 20),
 
-            _AddCard(label: tr('addNewProduct'), onTap: onAddProduct),
+            _AddCard(label: tr('addNewProduct'), onTap: widget.onAddProduct),
           ],
+          ),
         ),
       ),
     );

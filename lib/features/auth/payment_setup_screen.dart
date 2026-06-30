@@ -9,8 +9,7 @@ import '../../core/widgets/network_error_view.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/service_providers.dart';
-
-enum _PayMethod { upi, bank }
+import '../../utils/upi_utils.dart';
 
 class PaymentSetupScreen extends ConsumerStatefulWidget {
   const PaymentSetupScreen({super.key});
@@ -19,34 +18,44 @@ class PaymentSetupScreen extends ConsumerStatefulWidget {
 }
 
 class _State extends ConsumerState<PaymentSetupScreen> {
-  _PayMethod _method = _PayMethod.upi;
-  final _id = TextEditingController();
-  final _holder = TextEditingController();
-  final _phone = TextEditingController();
-
+  final _upiId = TextEditingController();
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Pre-fill with existing UPI ID if the user is revisiting this screen.
+    final existing = ref.read(userProvider).upiId;
+    if (existing.isNotEmpty) _upiId.text = existing;
+  }
+
+  @override
   void dispose() {
-    _id.dispose();
-    _holder.dispose();
-    _phone.dispose();
+    _upiId.dispose();
     super.dispose();
   }
 
   Future<void> _save({required bool skipped}) async {
+    final upiId = _upiId.text.trim();
+
+    if (!skipped && upiId.isNotEmpty && !isValidUpiId(upiId)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Please enter a valid UPI ID (e.g. yourname@oksbi or 9876543210@ybl)'),
+      ));
+      return;
+    }
+
     setState(() => _saving = true);
 
     final user = ref.read(userProvider);
-    final updated = user.copyWith(paymentSetup: !skipped);
+    final updated = user.copyWith(
+      paymentSetup: !skipped,
+      upiId: skipped ? user.upiId : upiId,
+    );
 
-    // Local save is instant and always succeeds — the user's progress is
-    // never lost even if they're offline.
     await ref.read(userProvider.notifier).saveLocal(updated);
 
-    // Check connectivity *before* attempting the network sync, so an
-    // offline device fails fast with a clear message instead of hanging
-    // on a request until it times out.
     final online = await hasNetworkConnection();
     var syncedOk = false;
 
@@ -87,43 +96,48 @@ class _State extends ConsumerState<PaymentSetupScreen> {
               const Center(child: AppLogo(size: 72)),
               const SizedBox(height: 20),
               Text(
-                'How do you want to be paid?',
+                'Set up UPI payments',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MethodCard(
-                      label: 'UPI',
-                      icon: Icons.qr_code_2,
-                      active: _method == _PayMethod.upi,
-                      onTap: () => setState(() => _method = _PayMethod.upi),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _MethodCard(
-                      label: 'Bank',
-                      icon: Icons.account_balance,
-                      active: _method == _PayMethod.bank,
-                      onTap: () => setState(() => _method = _PayMethod.bank),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _LabelField(
-                  label:
-                      _method == _PayMethod.upi ? 'UPI ID' : 'Account Number',
-                  controller: _id),
-              _LabelField(label: 'Account Holder Name', controller: _holder),
-              _LabelField(
-                  label: 'Phone Number Linked',
-                  controller: _phone,
-                  keyboardType: TextInputType.phone),
               const SizedBox(height: 8),
+              const Text(
+                'Customers will pay you directly — money goes straight to your UPI account. Karigar Samarthan never holds your funds.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMuted, height: 1.4),
+              ),
+              const SizedBox(height: 28),
+              _LabelField(
+                label: 'Your UPI ID',
+                hint: 'e.g. yourname@oksbi  or  9876543210@ybl',
+                controller: _upiId,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              Container(
+                margin: const EdgeInsets.only(bottom: 20),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.primary.withOpacity(0.2)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline,
+                        color: AppColors.primary, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Your UPI ID is safe. It will only be shown to customers who have already purchased your product so they can complete payment.',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textMuted, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               ElevatedButton.icon(
                 onPressed: _saving ? null : () => _save(skipped: false),
                 icon: _saving
@@ -136,7 +150,7 @@ class _State extends ConsumerState<PaymentSetupScreen> {
                         ),
                       )
                     : const Icon(Icons.verified_user),
-                label: const Text('Verify & Save'),
+                label: const Text('Save & Continue'),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -151,51 +165,16 @@ class _State extends ConsumerState<PaymentSetupScreen> {
   }
 }
 
-class _MethodCard extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-  const _MethodCard(
-      {required this.label,
-      required this.icon,
-      required this.active,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 22),
-        decoration: BoxDecoration(
-          color:
-              active ? AppColors.primary.withOpacity(0.08) : AppColors.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: active ? AppColors.primary : AppColors.border,
-            width: 1.5,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: AppColors.primary, size: 36),
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _LabelField extends StatelessWidget {
   final String label;
+  final String? hint;
   final TextEditingController controller;
   final TextInputType? keyboardType;
   const _LabelField(
-      {required this.label, required this.controller, this.keyboardType});
+      {required this.label,
+      required this.controller,
+      this.hint,
+      this.keyboardType});
 
   @override
   Widget build(BuildContext context) {
@@ -209,7 +188,11 @@ class _LabelField extends StatelessWidget {
             child: Text('$label:',
                 style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
-          TextField(controller: controller, keyboardType: keyboardType),
+          TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            decoration: InputDecoration(hintText: hint),
+          ),
         ],
       ),
     );
