@@ -35,7 +35,7 @@ class UserSyncService {
 
     _dio = Dio(
       BaseOptions(
-        baseUrl: baseUrl.isNotEmpty ? '$baseUrl/wp-json/wc/v3' : 'https://localhost/wp-json/wc/v3',
+        baseUrl: baseUrl.isNotEmpty ? '$baseUrl/wp-json/wc/v3/' : 'https://localhost/wp-json/wc/v3/',
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 30),
         queryParameters: {
@@ -100,14 +100,14 @@ class UserSyncService {
   }
 
   Future<String> _ensureAuthUid() async {
-    var user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      // TODO: replace with real Phone Auth once that flow lands (see class
-      // doc above for why anonymous auth is a safe bridge).
-      final cred = await FirebaseAuth.instance.signInAnonymously();
-      user = cred.user;
+      throw FirebaseAuthException(
+        code: 'not-authenticated',
+        message: 'No authenticated active user session found during synchronization.',
+      );
     }
-    return user!.uid;
+    return user.uid;
   }
 
   /// Creates (or finds) a WooCommerce customer for this user and returns
@@ -134,7 +134,7 @@ class UserSyncService {
       // (e.g. profile was synced before but the Firestore doc was missing
       // the wooCustomerId), reuse it instead of creating a duplicate.
       final existingSearch = await _dio.get(
-        '/customers',
+        'customers',
         queryParameters: {'email': email},
       );
 
@@ -143,7 +143,7 @@ class UserSyncService {
         return existingList.first['id'] as int?;
       }
 
-      final response = await _dio.post('/customers', data: {
+      final response = await _dio.post('customers', data: {
         'email': email,
         'username': username,
         'first_name': firstName,

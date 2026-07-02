@@ -8,7 +8,7 @@ import '../../providers/translations_provider.dart';
 import '../ai_assistant/ai_assistant_screen.dart';
 import 'faq_screen.dart';
 
-const String _whatsappNumber = '918448041541';
+const String _whatsappNumber = '917350776098';
 
 class HelpSupportScreen extends ConsumerWidget {
   const HelpSupportScreen({super.key});
