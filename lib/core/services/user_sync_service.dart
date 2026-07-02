@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../../providers/user_provider.dart';
@@ -58,7 +59,8 @@ class UserSyncService {
       return false;
     }
 
-    final userDocRef = FirebaseFirestore.instance.collection('users').doc(uid);
+    final db = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'karigar');
+    final userDocRef = db.collection('users').doc(uid);
 
     try {
       final existing = await userDocRef.get();
