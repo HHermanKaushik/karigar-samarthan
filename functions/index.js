@@ -1,4 +1,5 @@
 const functions = require("firebase-functions");
+const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
 const crypto = require("crypto");
@@ -8,8 +9,14 @@ initializeApp();
 // ── Shared constants ──────────────────────────────────────────────────────────
 
 const WOO_BASE = "https://jstrust.in/wp-json/wc/v3";
-const WOO_KEY  = "ck_e032198dba74f0dcb29465c666f15a39303758e5";
-const WOO_SEC  = "cs_86014fba07077c5c60e3248ad5a1dc6bd5393889";
+const wooConsumerKey = defineSecret("WOO_CONSUMER_KEY");
+const wooConsumerSecret = defineSecret("WOO_CONSUMER_SECRET");
+
+// Gates the admin-only endpoints below (backfillOrders, listFlaggedListings).
+// Previously a hardcoded string literal in this file - fine while this file
+// only ever lived locally/on Firebase, not once it's readable by anyone with
+// repo access. Set via `firebase functions:secrets:set KS_ADMIN_TOKEN`.
+const adminToken = defineSecret("KS_ADMIN_TOKEN");
 
 const STATUS_MAP = {
   pending:    "placed",
@@ -23,10 +30,12 @@ const STATUS_MAP = {
 
 // ── testWoo ───────────────────────────────────────────────────────────────────
 
-exports.testWoo = functions.https.onRequest(async (req, res) => {
+exports.testWoo = functions.https.onRequest(
+  { secrets: [wooConsumerKey, wooConsumerSecret] },
+  async (req, res) => {
   try {
     const wooUrl =
-      `${WOO_BASE}/products?consumer_key=${WOO_KEY}&consumer_secret=${WOO_SEC}`;
+      `${WOO_BASE}/products?consumer_key=${wooConsumerKey.value()}&consumer_secret=${wooConsumerSecret.value()}`;
 
     const { title, description, price } = req.body;
 
@@ -87,13 +96,37 @@ exports.wooOrderWebhook = functions.https.onRequest(async (req, res) => {
 
   const firstItem = (order.line_items || [])[0] || {};
 
+  // Keep every line item, not just the first - a multi-item order (e.g.
+  // several products in one cart) previously had all but its first product
+  // silently dropped, so karigars never saw what else they needed to ship.
+  const lineItems = (order.line_items || []).map((item) => ({
+    title: item.name || "Order",
+    image: item.image?.src || null,
+    quantity: item.quantity || 1,
+    price: parseFloat(item.total) || 0,
+  }));
+
+  // The "Pay via UPI" gateway (ks_upi) puts orders on "on-hold" once the
+  // customer submits their self-reported UPI transaction ID at checkout —
+  // WooCommerce's on-hold status here means "payment claimed, awaiting the
+  // karigar's manual confirmation," not "no payment yet." STATUS_MAP alone
+  // would flatten that to the same "placed" state as a brand-new order,
+  // hiding the fact that a payment (with a UTR) was actually submitted.
+  const upiUtr = meta.find((m) => m.key === "_ks_upi_utr")?.value || "";
+  const isUpiAwaitingConfirmation =
+    order.status === "on-hold" && order.payment_method === "ks_upi" && !!upiUtr;
+  const status = isUpiAwaitingConfirmation
+    ? "paid"
+    : (STATUS_MAP[order.status] || "placed");
+
   const orderDoc = {
+    lineItems,
     productTitle: firstItem.name || "Order",
     productImage: firstItem.image?.src || null,
     quantity: firstItem.quantity || 1,
     total: parseFloat(order.total) || 0,
     placedAt: Timestamp.fromDate(new Date(order.date_created || Date.now())),
-    status: STATUS_MAP[order.status] || "placed",
+    status,
     customerName: [order.billing?.first_name, order.billing?.last_name]
       .filter(Boolean).join(" ").trim() || "Customer",
     shippingAddress: [
@@ -102,7 +135,7 @@ exports.wooOrderWebhook = functions.https.onRequest(async (req, res) => {
     ].filter(Boolean).join(", "),
     customerPhone: order.billing?.phone || "",
     wooOrderId: order.id,
-    upiUtr: meta.find((m) => m.key === "_ks_upi_utr")?.value || "",
+    upiUtr,
     wooStatus: order.status,
   };
 
@@ -135,15 +168,17 @@ exports.wooOrderWebhook = functions.https.onRequest(async (req, res) => {
 //
 // Usage:
 //   curl -X POST <URL>/backfillOrders \
-//        -H "x-backfill-token: karigar-backfill" \
+//        -H "x-backfill-token: <KS_ADMIN_TOKEN secret value>" \
 //        -H "Content-Type: application/json" \
 //        -d '{"karigarUid":"<uid>"}'   ← optional; omit to sync all artisans
 
-exports.backfillOrders = functions.https.onRequest(async (req, res) => {
+exports.backfillOrders = functions.https.onRequest(
+  { secrets: [wooConsumerKey, wooConsumerSecret, adminToken] },
+  async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("POST only");
 
   const token = req.headers["x-backfill-token"] || "";
-  if (token !== "karigar-backfill") return res.status(401).send("Unauthorized");
+  if (token !== adminToken.value()) return res.status(401).send("Unauthorized");
 
   const axios = require("axios");
   const db = getFirestore("karigar");
@@ -185,7 +220,7 @@ exports.backfillOrders = functions.https.onRequest(async (req, res) => {
     let page = 1;
     while (true) {
       const { data: orders } = await axios.get(`${WOO_BASE}/orders`, {
-        params: { consumer_key: WOO_KEY, consumer_secret: WOO_SEC, per_page: 100, page },
+        params: { consumer_key: wooConsumerKey.value(), consumer_secret: wooConsumerSecret.value(), per_page: 100, page },
       });
       if (!orders?.length) break;
       allOrders.push(...orders);
@@ -215,15 +250,32 @@ exports.backfillOrders = functions.https.onRequest(async (req, res) => {
       if (targetUid && karigarUid !== targetUid) continue;
 
       const firstItem = order.line_items?.[0] || {};
+      const lineItems = (order.line_items || []).map((item) => ({
+        title: item.name || "Order",
+        image: item.image?.src || null,
+        quantity: item.quantity || 1,
+        price: parseFloat(item.total) || 0,
+      }));
+
+      // See the matching comment in wooOrderWebhook: ks_upi orders land on
+      // "on-hold" once the customer submits their UPI transaction ID, which
+      // means payment was claimed, not that none was made.
+      const upiUtr = meta.find((m) => m.key === "_ks_upi_utr")?.value || "";
+      const isUpiAwaitingConfirmation =
+        order.status === "on-hold" && order.payment_method === "ks_upi" && !!upiUtr;
+      const status = isUpiAwaitingConfirmation
+        ? "paid"
+        : (STATUS_MAP[order.status] || "placed");
 
       if (!karigarOrderDocs[karigarUid]) karigarOrderDocs[karigarUid] = {};
       karigarOrderDocs[karigarUid][String(order.id)] = {
+        lineItems,
         productTitle: firstItem.name || "Order",
         productImage: firstItem.image?.src || null,
         quantity: firstItem.quantity || 1,
         total: parseFloat(order.total) || 0,
         placedAt: Timestamp.fromDate(new Date(order.date_created || Date.now())),
-        status: STATUS_MAP[order.status] || "placed",
+        status,
         customerName: [order.billing?.first_name, order.billing?.last_name]
           .filter(Boolean).join(" ").trim() || "Customer",
         shippingAddress: [
@@ -232,7 +284,7 @@ exports.backfillOrders = functions.https.onRequest(async (req, res) => {
         ].filter(Boolean).join(", "),
         customerPhone: order.billing?.phone || "",
         wooOrderId: order.id,
-        upiUtr: meta.find((m) => m.key === "_ks_upi_utr")?.value || "",
+        upiUtr,
         wooStatus: order.status,
       };
     }
@@ -278,5 +330,61 @@ exports.backfillOrders = functions.https.onRequest(async (req, res) => {
   } catch (err) {
     functions.logger.error("backfillOrders failed", err.message);
     return res.status(500).send(err.message);
+  }
+});
+
+// ── listFlaggedListings ─────────────────────────────────────────────────────
+//
+// Read-only review page for the flagged_listings collection (written by
+// add_product_flow.dart._logFlaggedListing whenever the AI vision check
+// blocks a publish attempt for a banned item). There is no in-app admin UI
+// for this data yet, so this is the whole review workflow: open the URL,
+// look at the photos/reason, decide if anything needs manual follow-up.
+//
+// Usage: open in a browser with either a query param or header for the token:
+//   <URL>/listFlaggedListings?token=<KS_ADMIN_TOKEN secret value>
+//   curl -H "x-backfill-token: <KS_ADMIN_TOKEN secret value>" <URL>/listFlaggedListings
+
+exports.listFlaggedListings = functions.https.onRequest(
+  { secrets: [adminToken] },
+  async (req, res) => {
+  const token = req.headers["x-backfill-token"] || req.query.token || "";
+  if (token !== adminToken.value()) return res.status(401).send("Unauthorized");
+
+  try {
+    const db = getFirestore("karigar");
+    const snap = await db
+      .collection("flagged_listings")
+      .orderBy("timestamp", "desc")
+      .limit(200)
+      .get();
+
+    const rows = snap.docs.map((doc) => {
+      const d = doc.data();
+      const when = d.timestamp ? d.timestamp.toDate().toLocaleString("en-IN") : "unknown";
+      const images = (d.imageUrls || [])
+        .map((url) => `<img src="${url}" style="width:160px;height:160px;object-fit:cover;` +
+          `border-radius:8px;margin:4px" />`)
+        .join("");
+      const esc = (s) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+      return `
+        <div style="border:1px solid #ddd;border-radius:12px;padding:16px;margin-bottom:16px">
+          <div style="color:#666;font-size:13px">${esc(when)} &middot; ${esc(d.storeName)} &middot; ${esc(d.phone)} &middot; uid: ${esc(d.uid)}</div>
+          <div style="font-weight:600;margin:6px 0">Reason: ${esc(d.reason)}</div>
+          ${d.voiceTranscript ? `<div style="color:#444;font-style:italic">"${esc(d.voiceTranscript)}"</div>` : ""}
+          <div style="margin-top:8px">${images || "<i>no photos saved</i>"}</div>
+        </div>`;
+    });
+
+    res.status(200).send(`
+      <html><head><title>Flagged Listings (${snap.size})</title></head>
+      <body style="font-family:sans-serif;max-width:800px;margin:24px auto;padding:0 16px">
+        <h2>Flagged listings — ${snap.size}${snap.size === 200 ? "+ (showing most recent 200)" : ""}</h2>
+        ${rows.join("") || "<p>Nothing flagged yet.</p>"}
+      </body></html>
+    `);
+  } catch (err) {
+    functions.logger.error("listFlaggedListings failed", err.message);
+    res.status(500).send(err.message);
   }
 });

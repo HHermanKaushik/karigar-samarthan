@@ -4,9 +4,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/order.dart';
+import '../../providers/translations_provider.dart';
 import '../../services/service_providers.dart';
 
 class OrderDetailsScreen extends ConsumerStatefulWidget {
@@ -20,22 +22,50 @@ class OrderDetailsScreen extends ConsumerStatefulWidget {
 class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   bool _shipping = false;
 
-  Future<void> _markShipped() async {
-    final trackingController = TextEditingController();
-    final carrierController = TextEditingController(text: 'India Post');
+  // Draft persistence for the "Mark as Shipped" dialog's tracking/carrier
+  // fields, keyed per order. Real-world repro from testing: switching away
+  // mid-entry (e.g. to WhatsApp, to look up a courier name) and back lost
+  // whatever had been typed - most likely Android reclaiming the
+  // backgrounded app's process under memory pressure, which Flutter doesn't
+  // recover from by default since nothing here uses state restoration.
+  // Saving to disk on every keystroke and restoring on dialog-open survives
+  // that regardless of what actually killed the in-memory state.
+  String get _draftTrackingKey => 'shipping_draft_tracking_${widget.order.id}';
+  String get _draftCarrierKey => 'shipping_draft_carrier_${widget.order.id}';
 
+  Future<void> _clearShippingDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_draftTrackingKey);
+    await prefs.remove(_draftCarrierKey);
+  }
+
+  Future<void> _markShipped() async {
+    final tr = ref.read(trProvider);
+    final prefs = await SharedPreferences.getInstance();
+    final trackingController =
+        TextEditingController(text: prefs.getString(_draftTrackingKey) ?? '');
+    final carrierController = TextEditingController(
+        text: prefs.getString(_draftCarrierKey) ?? 'India Post');
+    trackingController.addListener(() {
+      prefs.setString(_draftTrackingKey, trackingController.text);
+    });
+    carrierController.addListener(() {
+      prefs.setString(_draftCarrierKey, carrierController.text);
+    });
+
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Mark as Shipped'),
+        title: Text(tr('markAsShipped')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: trackingController,
-              decoration: const InputDecoration(
-                labelText: 'Tracking Number *',
-                hintText: 'e.g. EA123456789IN',
+              decoration: InputDecoration(
+                labelText: tr('trackingNumberLabel'),
+                hintText: '${tr('egPrefix')} EA123456789IN',
               ),
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -43,9 +73,9 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: carrierController,
-              decoration: const InputDecoration(
-                labelText: 'Carrier',
-                hintText: 'e.g. India Post, DTDC, BlueDart',
+              decoration: InputDecoration(
+                labelText: tr('carrierLabel'),
+                hintText: '${tr('egPrefix')} India Post, DTDC, BlueDart',
               ),
             ),
           ],
@@ -53,14 +83,14 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(tr('cancel')),
           ),
           ElevatedButton(
             onPressed: () {
               if (trackingController.text.trim().isEmpty) return;
               Navigator.of(ctx).pop(true);
             },
-            child: const Text('Confirm'),
+            child: Text(tr('confirmBtn')),
           ),
         ],
       ),
@@ -80,10 +110,10 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
       bool wooOk = false;
       if (wooId != null) {
         wooOk = await ref.read(wooServiceProvider).markOrderShipped(
-          wooOrderId: wooId,
-          trackingNumber: tracking,
-          carrier: carrier,
-        );
+              wooOrderId: wooId,
+              trackingNumber: tracking,
+              carrier: carrier,
+            );
       }
 
       // Update Firestore immediately so the orders list reflects the new status
@@ -107,19 +137,20 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         });
       }
 
+      await _clearShippingDraft();
+
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(wooOk
-            ? 'Order marked as shipped. Customer notified via WooCommerce.'
-            : 'Marked as shipped in app. WooCommerce update failed — check your connection.'),
+        content: Text(
+            wooOk ? tr('orderShippedWooSuccess') : tr('orderShippedWooFailed')),
         duration: const Duration(seconds: 4),
       ));
     } catch (e) {
       if (!mounted) return;
       setState(() => _shipping = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(content: Text('${tr('errorPrefix')}: $e')),
       );
     }
   }
@@ -127,6 +158,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
+    final tr = ref.watch(trProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
@@ -134,9 +166,9 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         children: [
           Row(
             children: [
-              const Expanded(
-                child: Text('Order Details',
-                    style: TextStyle(
+              Expanded(
+                child: Text(tr('orderDetailsTitle'),
+                    style: const TextStyle(
                         fontSize: 22, fontWeight: FontWeight.w700)),
               ),
               IconButton(
@@ -146,7 +178,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          const _SectionTitle('Shipping Address'),
+          _SectionTitle(tr('shippingAddress')),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -167,17 +199,17 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                       const SizedBox(height: 4),
                       Text(order.shippingAddress),
                       const SizedBox(height: 4),
-                      Text('Phone: ${order.customerPhone}'),
+                      Text('${tr('phone')}: ${order.customerPhone}'),
                     ],
                   ),
                 ),
                 IconButton(
                   onPressed: () {
                     final text =
-                        '${order.customerName}\n${order.shippingAddress}\nPhone: ${order.customerPhone}';
+                        '${order.customerName}\n${order.shippingAddress}\n${tr('phone')}: ${order.customerPhone}';
                     Clipboard.setData(ClipboardData(text: text));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Address copied')),
+                      SnackBar(content: Text(tr('addressCopied'))),
                     );
                   },
                   icon: const Icon(Icons.copy_outlined),
@@ -186,28 +218,40 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             ),
           ),
           const SizedBox(height: 18),
-          const _SectionTitle('Items'),
+          _SectionTitle(tr('itemsSectionTitle')),
           Container(
             decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.border),
             ),
-            child: ListTile(
-              leading: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.image_outlined,
-                    color: AppColors.primary),
-              ),
-              title: Text(order.productTitle),
-              subtitle: Text('Quantity: ${order.quantity}'),
-              trailing: Text('₹ ${order.total.toStringAsFixed(0)}',
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            // One row per line item - a multi-product order previously only
+            // ever showed its first item, silently hiding the rest of what
+            // the karigar needed to ship.
+            child: Column(
+              children: [
+                for (var i = 0; i < order.lineItems.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  ListTile(
+                    leading: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.image_outlined,
+                          color: AppColors.primary),
+                    ),
+                    title: Text(order.lineItems[i].title),
+                    subtitle: Text(
+                        '${tr('quantityLabel')}: ${order.lineItems[i].quantity}'),
+                    trailing: Text(
+                        '₹ ${order.lineItems[i].price.toStringAsFixed(0)}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 18),
@@ -217,14 +261,46 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
               color: AppColors.accent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Payment Total',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                Text('₹ ${order.total.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.w700)),
+                Row(
+                  children: [
+                    Text(tr('paymentTotal'),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Text('₹ ${order.total.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                if (order.upiUtr.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(tr('upiReferenceUtr'),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 13)),
+                      ),
+                      Text(order.upiUtr,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13)),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: order.upiUtr));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(tr('utrCopied'))),
+                          );
+                        },
+                        icon: const Icon(Icons.copy_outlined, size: 18),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -240,7 +316,8 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.local_shipping_outlined),
-              label: Text(_shipping ? 'Updating…' : 'Mark as Shipped'),
+              label: Text(
+                  _shipping ? tr('updatingEllipsis') : tr('markAsShipped')),
             ),
           if (order.status == OrderStatus.shipped ||
               order.status == OrderStatus.delivered)
@@ -257,8 +334,8 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                   const SizedBox(width: 10),
                   Text(
                     order.status == OrderStatus.delivered
-                        ? 'Delivered'
-                        : 'Shipped',
+                        ? tr('deliveredLabel')
+                        : tr('shippedLabel'),
                     style: const TextStyle(
                         color: AppColors.primary, fontWeight: FontWeight.w600),
                   ),

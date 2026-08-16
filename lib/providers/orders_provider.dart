@@ -35,11 +35,11 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
         .orderBy('placedAt', descending: true)
         .snapshots()
         .listen(
-          (snap) {
-            state = snap.docs.map(_fromDoc).toList();
-          },
-          onError: (_) {},
-        );
+      (snap) {
+        state = snap.docs.map(_fromDoc).toList();
+      },
+      onError: (_) {},
+    );
   }
 
   /// Forces a one-time re-fetch (e.g. pull-to-refresh).
@@ -65,11 +65,38 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
   static CustomerOrder _fromDoc(
       QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data();
+    final productTitle = d['productTitle'] ?? '';
+    final productImage = d['productImage'] as String?;
+    final quantity = (d['quantity'] as num?)?.toInt() ?? 1;
+
+    final rawLineItems = d['lineItems'] as List<dynamic>?;
+    final lineItems = (rawLineItems != null && rawLineItems.isNotEmpty)
+        ? rawLineItems.map((raw) {
+            final li = raw as Map<String, dynamic>;
+            return OrderLineItem(
+              title: li['title'] as String? ?? '',
+              image: li['image'] as String?,
+              quantity: (li['quantity'] as num?)?.toInt() ?? 1,
+              price: (li['price'] as num?)?.toDouble() ?? 0,
+            );
+          }).toList()
+        // Orders synced before lineItems existed in Firestore - fall back
+        // to a single-item list built from the legacy flat fields.
+        : [
+            OrderLineItem(
+              title: productTitle,
+              image: productImage,
+              quantity: quantity,
+              price: (d['total'] as num?)?.toDouble() ?? 0,
+            ),
+          ];
+
     return CustomerOrder(
       id: doc.id,
-      productTitle: d['productTitle'] ?? '',
-      productImage: d['productImage'] as String?,
-      quantity: (d['quantity'] as num?)?.toInt() ?? 1,
+      lineItems: lineItems,
+      productTitle: productTitle,
+      productImage: productImage,
+      quantity: quantity,
       total: (d['total'] as num?)?.toDouble() ?? 0,
       placedAt: (d['placedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       status: OrderStatus.values.firstWhere(
@@ -79,6 +106,9 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
       customerName: d['customerName'] ?? '',
       shippingAddress: d['shippingAddress'] ?? '',
       customerPhone: d['customerPhone'] ?? '',
+      upiUtr: d['upiUtr'] as String? ?? '',
+      trackingNumber: d['trackingNumber'] as String? ?? '',
+      carrier: d['carrier'] as String? ?? '',
     );
   }
 }

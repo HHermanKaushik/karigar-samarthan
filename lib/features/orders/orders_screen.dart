@@ -117,7 +117,7 @@ class _OrderCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text('Order # ${order.id}',
+                    Text('${tr('orderNumberPrefix')} ${order.id}',
                         style: const TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 16)),
                     const Spacer(),
@@ -139,8 +139,12 @@ class _OrderCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(order.productTitle,
-                    style: const TextStyle(fontSize: 15)),
+                Text(
+                  order.lineItems.length > 1
+                      ? '${order.lineItems.first.title} +${order.lineItems.length - 1} ${tr('moreItemsSuffix')}'
+                      : order.productTitle,
+                  style: const TextStyle(fontSize: 15),
+                ),
                 const SizedBox(height: 6),
                 Text('${tr('ordered')}: ${df.format(order.placedAt)}',
                     style: const TextStyle(color: AppColors.textMuted)),

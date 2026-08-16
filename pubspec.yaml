@@ -3,7 +3,7 @@ description: Karigar Samarthan Seller App
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.1.1+7
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -52,15 +52,28 @@ dependencies:
   firebase_crashlytics: ^4.3.5
 
   google_generative_ai: ^0.4.7
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  integration_test:
+    sdk: flutter
+
+  patrol: ^3.15.2
+
   flutter_lints: ^4.0.0
+
 
 flutter:
   uses-material-design: true
 
   assets:
     - .env
+    - assets/logo/app_icon.png
+
+patrol:
+  app_name: Karigar Samarthan
+  android:
+    package_name: in.jstrust.karigarsamarthan

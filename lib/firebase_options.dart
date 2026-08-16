@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyA5ugyDzh7nkqDAgZbwDvDo_da0qfrvrmw',
-    appId: '1:1017268067160:android:89c23d1b7fb019a632e32d',
+    appId: '1:1017268067160:android:cab8ded59b77719e32e32d',
     messagingSenderId: '1017268067160',
     projectId: 'karigar-samarthan',
     storageBucket: 'karigar-samarthan.firebasestorage.app',
@@ -85,5 +85,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'karigar-samarthan.firebasestorage.app',
     measurementId: 'G-0553XKX114',
   );
-
 }

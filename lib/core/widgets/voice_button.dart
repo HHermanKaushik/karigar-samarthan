@@ -73,8 +73,9 @@ class _VoiceButtonState extends State<VoiceButton>
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: (widget.listening ? AppColors.danger : AppColors.primary)
-                      .withValues(alpha: widget.listening ? 0.55 : 0.35),
+                  color:
+                      (widget.listening ? AppColors.danger : AppColors.primary)
+                          .withValues(alpha: widget.listening ? 0.55 : 0.35),
                   blurRadius: widget.listening ? 28 : 18,
                   spreadRadius: widget.listening ? 6 : 2,
                 ),

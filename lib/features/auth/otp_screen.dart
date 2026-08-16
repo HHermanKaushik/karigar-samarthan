@@ -43,7 +43,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     final code = _otpController.text.trim();
     if (code.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter the 6-digit OTP code')),
+        const SnackBar(
+          key: Key('otp_validation_error_message'),
+          content: Text('Enter the 6-digit OTP code'),
+        ),
       );
       return;
     }
@@ -59,7 +62,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     } on FirebaseAuthException catch (e) {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Invalid OTP verification code.')),
+        SnackBar(
+          key: const Key('otp_verification_error_message'),
+          content: Text(e.message ?? 'Invalid OTP verification code.'),
+        ),
       );
     }
   }
@@ -71,7 +77,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     ref.invalidate(ordersProvider);
 
     final uid = FirebaseAuth.instance.currentUser!.uid;
-    final db = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'karigar');
+    final db = FirebaseFirestore.instanceFor(
+        app: Firebase.app(), databaseId: 'karigar');
     final doc = await db.collection('users').doc(uid).get();
 
     bool hasProfile = false;
@@ -82,24 +89,26 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       if (name.isNotEmpty) {
         hasProfile = true;
         await ref.read(userProvider.notifier).saveLocal(UserProfile(
-          fullName: d['fullName'] ?? '',
-          storeName: d['storeName'] ?? '',
-          phone: d['phone'] ?? '',
-          role: d['role'] ?? 'Master Artisan',
-          paymentSetup: d['paymentSetup'] as bool? ?? false,
-          upiId: d['upiId'] as String? ?? '',
-        ));
+              fullName: d['fullName'] ?? '',
+              storeName: d['storeName'] ?? '',
+              phone: d['phone'] ?? '',
+              role: d['role'] ?? 'Master Artisan',
+              paymentSetup: d['paymentSetup'] as bool? ?? false,
+              upiId: d['upiId'] as String? ?? '',
+            ));
         await ref.read(onboardingProvider.notifier).complete();
       }
     }
 
-    // Explicit structural resolution check based on parent module workflow context flags
+    // A brand-new registration: no Firestore profile existed yet, but
+    // signup_screen.dart already cached one locally before sending the OTP -
+    // persist it now that the phone number is verified.
     if (!hasProfile && widget.routingData.isRegistrationFlow) {
       final localProfileCache = ref.read(userProvider);
       if (localProfileCache.fullName.isNotEmpty) {
-        // Enforces your fixed user_sync_service.dart core WordPress deployment endpoint!
         await ref.read(userProvider.notifier).save(localProfileCache);
         hasProfile = true;
+        await ref.read(onboardingProvider.notifier).complete();
       }
     }
 
@@ -107,8 +116,20 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     setState(() => _loading = false);
 
     if (hasProfile) {
+      // UPI setup is intentionally NOT forced here - new sellers were
+      // interpreting a mandatory Payment Setup step as being asked to pay
+      // the app itself, rather than adding where THEY get paid. UPI ID can
+      // be added any time from Profile settings instead.
       context.go('/home');
     } else {
+      if (!widget.routingData.isRegistrationFlow) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            key: const Key('otp_phone_not_registered_message'),
+            content: Text(ref.read(trProvider)('phoneNotRegistered')),
+          ),
+        );
+      }
       context.go('/signup');
     }
   }
@@ -120,7 +141,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: BackButton(
-          onPressed: () => context.go(widget.routingData.isRegistrationFlow ? '/signup' : '/login'),
+          key: const Key('otp_back_button'),
+          onPressed: () => context
+              .go(widget.routingData.isRegistrationFlow ? '/signup' : '/login'),
         ),
       ),
       body: SafeArea(
@@ -144,12 +167,16 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
               ),
               const SizedBox(height: 32),
               TextField(
+                key: const Key('otp_input_field'),
                 controller: _otpController,
                 keyboardType: TextInputType.number,
                 textAlign: TextAlign.center,
                 maxLength: 6,
                 autofocus: true,
-                style: const TextStyle(fontSize: 28, letterSpacing: 12, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                    fontSize: 28,
+                    letterSpacing: 12,
+                    fontWeight: FontWeight.w700),
                 decoration: const InputDecoration(
                   hintText: '· · · · · ·',
                   counterText: '',
@@ -158,11 +185,28 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
+                key: const Key('otp_verify_button'),
                 onPressed: _loading ? null : _verifyOtp,
                 child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            key: Key('otp_verify_spinner'),
+                            strokeWidth: 2,
+                            color: Colors.white))
                     : Text(tr('verifyOtp')),
               ),
+              if (_loading)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    tr('verifyingCode'),
+                    key: const Key('otp_verify_status_text'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.textMuted),
+                  ),
+                ),
               const Spacer(),
             ],
           ),

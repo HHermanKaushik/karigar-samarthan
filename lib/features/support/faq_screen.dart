@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/constants/legal_links.dart';
 import '../../core/services/tts_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/voice_button.dart';
@@ -18,7 +20,12 @@ import '../../services/service_providers.dart';
 class _FaqItem {
   final Map<String, String> question;
   final Map<String, String> answer;
-  const _FaqItem({required this.question, required this.answer});
+
+  /// Optional "read more" link shown below the answer, e.g. to the full
+  /// Terms & Conditions - null for items that don't need one.
+  final String? linkUrl;
+
+  const _FaqItem({required this.question, required this.answer, this.linkUrl});
 
   String q(String code) => question[code] ?? question['en'] ?? '';
   String a(String code) => answer[code] ?? answer['en'] ?? '';
@@ -34,24 +41,19 @@ const _faqItems = [
       'ta': 'புதிய தயாரிப்பை எவ்வாறு சேர்ப்பது?',
     },
     answer: {
-      'en':
-          'On the Home screen, tap "Add a New Product". Take or choose a photo — '
+      'en': 'On the Home screen, tap "Add a New Product". Take or choose a photo — '
           'the app will suggest a title, description, category and tags. Review them, '
           'set the price and quantity, then tap Publish.',
-      'hi':
-          'होम स्क्रीन पर "नया उत्पाद जोड़ें" टैप करें। फोटो लें या चुनें — ऐप '
+      'hi': 'होम स्क्रीन पर "नया उत्पाद जोड़ें" टैप करें। फोटो लें या चुनें — ऐप '
           'शीर्षक, विवरण, श्रेणी और टैग सुझाएगा। उन्हें जांचें, कीमत और मात्रा सेट '
           'करें, फिर प्रकाशित करें।',
-      'mr':
-          'होम स्क्रीनवर "नवीन उत्पादन जोडा" टॅप करा. फोटो घ्या किंवा निवडा — '
+      'mr': 'होम स्क्रीनवर "नवीन उत्पादन जोडा" टॅप करा. फोटो घ्या किंवा निवडा — '
           'अ‍ॅप शीर्षक, वर्णन, श्रेणी आणि टॅग सुचवेल. त्यांची तपासणी करा, किंमत '
           'आणि प्रमाण सेट करा, मग प्रकाशित करा.',
-      'bn':
-          'হোম স্ক্রিনে "নতুন পণ্য যোগ করুন" ট্যাপ করুন। ছবি তুলুন বা বেছে নিন — '
+      'bn': 'হোম স্ক্রিনে "নতুন পণ্য যোগ করুন" ট্যাপ করুন। ছবি তুলুন বা বেছে নিন — '
           'অ্যাপ শিরোনাম, বিবরণ, বিভাগ ও ট্যাগ সাজেস্ট করবে। সেগুলো দেখুন, দাম ও '
           'পরিমাণ সেট করুন, তারপর প্রকাশ করুন।',
-      'ta':
-          'முகப்புத் திரையில் "புதிய தயாரிப்பைச் சேர்க்கவும்" என்பதை தட்டவும். '
+      'ta': 'முகப்புத் திரையில் "புதிய தயாரிப்பைச் சேர்க்கவும்" என்பதை தட்டவும். '
           'புகைப்படம் எடுக்கவும் அல்லது தேர்ந்தெடுக்கவும் — பயன்பாடு தலைப்பு, '
           'விவரிப்பு, வகை மற்றும் குறிச்சொற்களை பரிந்துரைக்கும். அவற்றை '
           'மதிப்பாய்வு செய்யுங்கள், விலை மற்றும் அளவை அமைத்து, வெளியிடு என்பதை '
@@ -67,22 +69,20 @@ const _faqItems = [
       'ta': 'பயன்பாட்டின் மொழியை எவ்வாறு மாற்றுவது?',
     },
     answer: {
-      'en':
-          "Tap the profile icon at the bottom of the screen, then tap "
+      'en': "Tap the profile icon at the bottom of the screen, then tap "
           "'Change language' to choose English, Hindi, Marathi, Bengali or Tamil.",
       'hi':
           'स्क्रीन के नीचे प्रोफ़ाइल आइकन टैप करें, फिर "भाषा बदलें" टैप करके '
-          'अंग्रेज़ी, हिंदी, मराठी, बंगाली या तमिल चुनें।',
-      'mr':
-          "स्क्रीनच्या तळाशी असलेल्या प्रोफाइल आयकॉनवर टॅप करा, नंतर "
+              'अंग्रेज़ी, हिंदी, मराठी, बंगाली या तमिल चुनें।',
+      'mr': "स्क्रीनच्या तळाशी असलेल्या प्रोफाइल आयकॉनवर टॅप करा, नंतर "
           "'भाषा बदला' टॅप करून इंग्रजी, हिंदी, मराठी, बंगाली किंवा तमिळ निवडा.",
       'bn':
           "স্ক্রিনের নিচে প্রোফাইল আইকনে ট্যাপ করুন, তারপর 'ভাষা পরিবর্তন করুন' "
-          'ট্যাপ করে ইংরেজি, হিন্দি, মারাঠি, বাংলা বা তামিল বেছে নিন।',
+              'ট্যাপ করে ইংরেজি, হিন্দি, মারাঠি, বাংলা বা তামিল বেছে নিন।',
       'ta':
           "திரையின் கீழே உள்ள சுயவிவர ஐகானை தட்டவும், பிறகு 'மொழியை மாற்றவும்' "
-          'என்பதை தட்டி ஆங்கிலம், இந்தி, மராத்தி, வங்காளம் அல்லது தமிழ் '
-          'தேர்ந்தெடுக்கவும்.',
+              'என்பதை தட்டி ஆங்கிலம், இந்தி, மராத்தி, வங்காளம் அல்லது தமிழ் '
+              'தேர்ந்தெடுக்கவும்.',
     },
   ),
   _FaqItem(
@@ -96,18 +96,16 @@ const _faqItems = [
     answer: {
       'en':
           'Tap the receipt icon at the bottom of the screen to see all customer '
-          'orders, their status, and shipping details.',
+              'orders, their status, and shipping details.',
       'hi':
           'स्क्रीन के नीचे रिसीट आइकन टैप करें। सभी ग्राहक ऑर्डर, उनकी स्थिति '
-          'और शिपिंग जानकारी देखें।',
-      'mr':
-          'सर्व ग्राहक ऑर्डर, त्यांची स्थिती आणि शिपिंग माहिती पाहण्यासाठी '
+              'और शिपिंग जानकारी देखें।',
+      'mr': 'सर्व ग्राहक ऑर्डर, त्यांची स्थिती आणि शिपिंग माहिती पाहण्यासाठी '
           'स्क्रीनच्या तळाशी असलेल्या रिसीट आयकॉनवर टॅप करा.',
       'bn':
           'সব গ্রাহক অর্ডার, তাদের অবস্থা এবং শিপিং তথ্য দেখতে স্ক্রিনের নিচে '
-          'রিসিট আইকনে ট্যাপ করুন।',
-      'ta':
-          'அனைத்து வாடிக்கையாளர் ஆர்டர்கள், அவற்றின் நிலை மற்றும் ஷிப்பிங் '
+              'রিসিট আইকনে ট্যাপ করুন।',
+      'ta': 'அனைத்து வாடிக்கையாளர் ஆர்டர்கள், அவற்றின் நிலை மற்றும் ஷிப்பிங் '
           'விவரங்களை பார்க்க திரையின் கீழே உள்ள ரசீது ஐகானை தட்டவும்.',
     },
   ),
@@ -120,23 +118,19 @@ const _faqItems = [
       'ta': 'பணம் செலுத்தும் விவரங்களை எவ்வாறு அமைப்பது?',
     },
     answer: {
-      'en':
-          'During account setup you can add your UPI ID or bank account so you '
+      'en': 'During account setup you can add your UPI ID or bank account so you '
           'get paid for your sales. Your profile screen shows whether payment '
           'setup is complete.',
-      'hi':
-          'खाता सेटअप के दौरान अपना UPI ID या बैंक खाता जोड़ें ताकि बिक्री का '
+      'hi': 'खाता सेटअप के दौरान अपना UPI ID या बैंक खाता जोड़ें ताकि बिक्री का '
           'भुगतान मिले। प्रोफ़ाइल स्क्रीन पर देखें कि भुगतान सेटअप पूरा हुआ है।',
-      'mr':
-          'खाते सेटअप दरम्यान तुमचा UPI ID किंवा बँक खाते जोडा जेणेकरून '
+      'mr': 'खाते सेटअप दरम्यान तुमचा UPI ID किंवा बँक खाते जोडा जेणेकरून '
           'विक्रीचे पेमेंट मिळेल. प्रोफाइल स्क्रीनवर पेमेंट सेटअप पूर्ण झाले '
           'की नाही ते पाहा.',
       'bn':
           'অ্যাকাউন্ট সেটআপের সময় আপনার UPI ID বা ব্যাংক অ্যাকাউন্ট যোগ করুন '
-          'যাতে বিক্রির অর্থ পান। প্রোফাইল স্ক্রিনে দেখুন পেমেন্ট সেটআপ '
-          'সম্পন্ন হয়েছে কি না।',
-      'ta':
-          'கணக்கு அமைவின் போது உங்கள் UPI ID அல்லது வங்கி கணக்கை சேர்க்கவும், '
+              'যাতে বিক্রির অর্থ পান। প্রোফাইল স্ক্রিনে দেখুন পেমেন্ট সেটআপ '
+              'সম্পন্ন হয়েছে কি না।',
+      'ta': 'கணக்கு அமைவின் போது உங்கள் UPI ID அல்லது வங்கி கணக்கை சேர்க்கவும், '
           'இதனால் விற்பனைக்கு பணம் கிடைக்கும். சுயவிவர திரையில் பணம் செலுத்தும் '
           'அமைவு முடிந்துள்ளதா என்று பார்க்கவும்.',
     },
@@ -150,23 +144,53 @@ const _faqItems = [
       'ta': 'என் தயாரிப்பில் புகைப்படம் ஏன் காட்டவில்லை?',
     },
     answer: {
-      'en':
-          'This can happen if the photo failed to upload due to a weak internet '
+      'en': 'This can happen if the photo failed to upload due to a weak internet '
           'connection. Try editing the product and re-adding the photo when you '
           'have a stronger connection.',
-      'hi':
-          'कमज़ोर इंटरनेट के कारण फोटो अपलोड न हो तो यह हो सकता है। मज़बूत '
+      'hi': 'कमज़ोर इंटरनेट के कारण फोटो अपलोड न हो तो यह हो सकता है। मज़बूत '
           'कनेक्शन पर उत्पाद संपादित करके फोटो दोबारा जोड़ें।',
-      'mr':
-          'कमकुवत इंटरनेट कनेक्शनमुळे फोटो अपलोड न झाल्यास असे होऊ शकते. '
+      'mr': 'कमकुवत इंटरनेट कनेक्शनमुळे फोटो अपलोड न झाल्यास असे होऊ शकते. '
           'चांगले कनेक्शन असताना उत्पादन संपादित करून फोटो पुन्हा जोडा.',
-      'bn':
-          'দুর্বল ইন্টারনেটের কারণে ছবি আপলোড না হলে এটা হতে পারে। ভালো '
+      'bn': 'দুর্বল ইন্টারনেটের কারণে ছবি আপলোড না হলে এটা হতে পারে। ভালো '
           'সংযোগে পণ্য সম্পাদনা করে ছবি আবার যোগ করুন।',
-      'ta':
-          'பலவீனமான இணைப்பால் புகைப்படம் பதிவேற்றம் ஆகாவிட்டால் இது நடக்கலாம். '
+      'ta': 'பலவீனமான இணைப்பால் புகைப்படம் பதிவேற்றம் ஆகாவிட்டால் இது நடக்கலாம். '
           'வலுவான இணைப்பில் தயாரிப்பை திருத்தி புகைப்படத்தை மீண்டும் சேர்க்கவும்.',
     },
+  ),
+  _FaqItem(
+    question: {
+      'en': 'Why was my product blocked from publishing?',
+      'hi': 'मेरा उत्पाद प्रकाशित होने से क्यों रोका गया?',
+      'mr': 'माझे उत्पादन प्रकाशित होण्यापासून का थांबवले गेले?',
+      'bn': 'আমার পণ্য প্রকাশ হতে বাধা পেল কেন?',
+      'ta': 'என் தயாரிப்பு வெளியிடப்படாமல் ஏன் தடுக்கப்பட்டது?',
+    },
+    answer: {
+      'en': 'Some items cannot be sold on this marketplace: weapons, drugs, '
+          'alcohol, tobacco, wildlife products, counterfeit branded goods, '
+          'and explicit content. Our AI checks every photo automatically. '
+          'If your product was blocked by mistake, contact support via '
+          'WhatsApp.',
+      'hi': 'कुछ वस्तुएं इस मार्केटप्लेस पर नहीं बेची जा सकतीं: हथियार, नशीली '
+          'दवाएं, शराब, तंबाकू, वन्यजीव उत्पाद, नकली ब्रांडेड सामान और अश्लील '
+          'सामग्री। हमारा AI हर फोटो अपने आप जांचता है। अगर आपका उत्पाद गलती '
+          'से रोका गया है, तो WhatsApp के ज़रिए सहायता से संपर्क करें।',
+      'mr':
+          'काही वस्तू या मार्केटप्लेसवर विकल्या जाऊ शकत नाहीत: शस्त्रे, अंमली '
+              'पदार्थ, दारू, तंबाखू, वन्यजीव उत्पादने, बनावट ब्रँडेड वस्तू आणि '
+              'अश्लील मजकूर. आमचे AI प्रत्येक फोटो आपोआप तपासते. तुमचे उत्पादन '
+              'चुकून थांबवले असल्यास, WhatsApp द्वारे सहाय्याशी संपर्क साधा.',
+      'bn': 'কিছু জিনিস এই মার্কেটপ্লেসে বিক্রি করা যায় না: অস্ত্র, মাদক, মদ, '
+          'তামাক, বন্যপ্রাণী পণ্য, নকল ব্র্যান্ডেড পণ্য এবং অশ্লীল বিষয়বস্তু। '
+          'আমাদের AI প্রতিটি ছবি স্বয়ংক্রিয়ভাবে পরীক্ষা করে। আপনার পণ্য ভুলবশত '
+          'বাধা পেলে, WhatsApp-এর মাধ্যমে সাপোর্টে যোগাযোগ করুন।',
+      'ta': 'சில பொருட்களை இந்த மார்க்கெட்பிளேஸில் விற்க முடியாது: ஆயுதங்கள், '
+          'போதைப்பொருள்கள், மது, புகையிலை, வனவிலங்கு பொருட்கள், போலி பிராண்ட் '
+          'பொருட்கள் மற்றும் ஆபாசமான உள்ளடக்கம். எங்கள் AI ஒவ்வொரு புகைப்படத்தையும் '
+          'தானாகவே சரிபார்க்கும். உங்கள் தயாரிப்பு தவறுதலாக தடுக்கப்பட்டிருந்தால், '
+          'WhatsApp வழியாக ஆதரவைத் தொடர்பு கொள்ளவும்.',
+    },
+    linkUrl: termsAndConditionsUrl,
   ),
   _FaqItem(
     question: {
@@ -177,24 +201,19 @@ const _faqItems = [
       'ta': 'வேறு பிரச்சனை உள்ளது. என்ன செய்வது?',
     },
     answer: {
-      'en':
-          "Tap 'Ask the AI Assistant' in Help & Support to speak or type your "
+      'en': "Tap 'Ask the AI Assistant' in Help & Support to speak or type your "
           "question in your own language, or tap 'Chat on WhatsApp' to reach "
           'our support team directly.',
-      'hi':
-          '"मदद और समर्थन" में "AI सहायक से पूछें" टैप करके अपनी भाषा में बोलें '
+      'hi': '"मदद और समर्थन" में "AI सहायक से पूछें" टैप करके अपनी भाषा में बोलें '
           'या टाइप करें, या सीधे हमारी टीम तक पहुंचने के लिए "WhatsApp पर चैट '
           'करें" टैप करें।',
-      'mr':
-          '"मदत आणि समर्थन" मध्ये "AI सहाय्यकाला विचारा" टॅप करून तुमच्या '
+      'mr': '"मदत आणि समर्थन" मध्ये "AI सहाय्यकाला विचारा" टॅप करून तुमच्या '
           'भाषेत बोला किंवा टाइप करा, किंवा आमच्या टीमपर्यंत थेट पोहोचण्यासाठी '
           '"WhatsApp वर चॅट करा" टॅप करा.',
-      'bn':
-          '"সাহায্য ও সহায়তা"-তে "AI সহকারীকে জিজ্ঞেস করুন" ট্যাপ করে আপনার '
+      'bn': '"সাহায্য ও সহায়তা"-তে "AI সহকারীকে জিজ্ঞেস করুন" ট্যাপ করে আপনার '
           'ভাষায় বলুন বা টাইপ করুন, অথবা সরাসরি আমাদের দলের সাথে যোগাযোগ '
           'করতে "WhatsApp এ চ্যাট করুন" ট্যাপ করুন।',
-      'ta':
-          '"உதவி & ஆதரவு"-ல் "AI உதவியாளரிடம் கேளுங்கள்" என்பதை தட்டி உங்கள் '
+      'ta': '"உதவி & ஆதரவு"-ல் "AI உதவியாளரிடம் கேளுங்கள்" என்பதை தட்டி உங்கள் '
           'மொழியில் பேசுங்கள் அல்லது தட்டச்சு செய்யுங்கள், அல்லது எங்கள் குழுவை '
           'நேரடியாக அடைய "WhatsApp இல் அரட்டை" என்பதை தட்டவும்.',
     },
@@ -290,7 +309,11 @@ class _FaqScreenState extends ConsumerState<FaqScreen> {
 
   Future<void> _stopAndTranscribe() async {
     final path = await _recorder.stopRecorder();
-    if (mounted) setState(() { _listening = false; _transcribing = path != null; });
+    if (mounted)
+      setState(() {
+        _listening = false;
+        _transcribing = path != null;
+      });
 
     if (path == null) return;
 
@@ -326,12 +349,14 @@ class _FaqScreenState extends ConsumerState<FaqScreen> {
             children: [
               const Icon(Icons.quiz_outlined, color: AppColors.primary),
               const SizedBox(width: 8),
-              Text(
-                tr('faq'),
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700),
+              Expanded(
+                child: Text(
+                  tr('faq'),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w700),
+                ),
               ),
-              const Spacer(),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(Icons.close),
@@ -374,8 +399,8 @@ class _FaqScreenState extends ConsumerState<FaqScreen> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 tr('listening'),
-                style: const TextStyle(
-                    color: AppColors.textMuted, fontSize: 12),
+                style:
+                    const TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
             ),
           const SizedBox(height: 8),
@@ -426,6 +451,7 @@ class _FaqTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lang = ref.watch(languageProvider);
+    final tr = ref.watch(trProvider);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -443,8 +469,7 @@ class _FaqTile extends ConsumerWidget {
         children: [
           Text(
             item.a(lang.code),
-            style: const TextStyle(
-                color: AppColors.textMuted, height: 1.5),
+            style: const TextStyle(color: AppColors.textMuted, height: 1.5),
           ),
           const SizedBox(height: 10),
           Align(
@@ -452,17 +477,33 @@ class _FaqTile extends ConsumerWidget {
             child: TextButton.icon(
               onPressed: onPlay,
               icon: Icon(
-                isPlaying ? Icons.stop_circle_outlined : Icons.volume_up_outlined,
+                isPlaying
+                    ? Icons.stop_circle_outlined
+                    : Icons.volume_up_outlined,
                 size: 18,
               ),
               label: Text(isPlaying ? '...' : listenLabel),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               ),
             ),
           ),
+          if (item.linkUrl != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => launchUrl(Uri.parse(item.linkUrl!),
+                    mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: Text(tr('readFullPolicyBtn')),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              ),
+            ),
         ],
       ),
     );

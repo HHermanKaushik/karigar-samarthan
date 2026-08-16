@@ -10,6 +10,7 @@ import '../../core/services/tts_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/voice_button.dart';
 import '../../models/app_language.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/products_provider.dart';
@@ -18,17 +19,13 @@ import '../../providers/user_provider.dart';
 import '../../services/ai_assistant_service.dart';
 import '../../services/service_providers.dart';
 
-class _ChatMessage {
-  final String text;
-  final bool fromAi;
-  final DateTime at;
-  _ChatMessage(this.text, this.fromAi) : at = DateTime.now();
-}
-
 class AiAssistantScreen extends ConsumerStatefulWidget {
-  /// Called after the AI modal closes when the model invokes navigate_to.
+  /// Called after the AI modal closes when the model invokes navigate_to or
+  /// open_edit_product. [editProductId] is set (the Firestore product doc
+  /// id) when [target] is [NavigateTarget.editProduct].
   /// If null, navigation tool calls are handled as text only.
-  final void Function(NavigateTarget)? onNavigateTo;
+  final void Function(NavigateTarget target, {String? editProductId})?
+      onNavigateTo;
 
   const AiAssistantScreen({super.key, this.onNavigateTo});
 
@@ -44,26 +41,38 @@ class _State extends ConsumerState<AiAssistantScreen> {
   bool _recorderReady = false;
   String? _recordingPath;
 
-  late List<_ChatMessage> _messages;
-  AgentSession? _session;
-
   bool _sending = false;
   bool _listening = false;
   bool _transcribing = false;
+  double _speechRate = TTSService.defaultSpeechRate;
 
   @override
   void initState() {
     super.initState();
-    final tr = ref.read(trProvider);
-    _messages = [_ChatMessage(tr('aiGreeting'), true)];
-    _initRecorder();
-  }
-
-  Future<void> _initRecorder() async {
-    final status = await Permission.microphone.request();
-    if (status != PermissionStatus.granted) return;
-    await _recorder.openRecorder();
-    if (mounted) setState(() => _recorderReady = true);
+    TTSService.getSpeechRate().then((rate) {
+      if (mounted) setState(() => _speechRate = rate);
+    });
+    // Chat transcript and Gemini session both live in providers (see
+    // chat_provider.dart), not in this State, so they survive this screen
+    // being popped and reopened - e.g. when the assistant navigates the
+    // karigar to Orders/Profile and they come back to the chat. Only seed
+    // the greeting the very first time the app-wide transcript is empty.
+    // Deferred to after this build via addPostFrameCallback: modifying a
+    // provider's state synchronously inside initState (during the widget
+    // tree's build phase) throws - Riverpod requires state changes to
+    // happen outside build/initState/dispose/etc.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (ref.read(chatMessagesProvider).isEmpty) {
+        final tr = ref.read(trProvider);
+        ref
+            .read(chatMessagesProvider.notifier)
+            .add(ChatMessage(tr('aiGreeting'), true));
+      }
+    });
+    // Microphone permission is requested on-demand in _toggleVoice() instead
+    // of here, so opening this screen to type a text message never triggers
+    // a permission prompt for users who don't intend to use voice input.
   }
 
   @override
@@ -76,18 +85,39 @@ class _State extends ConsumerState<AiAssistantScreen> {
   }
 
   // Session is created lazily on first send so Firestore-backed providers
-  // (products, orders) have time to finish loading.
+  // (products, orders) have time to finish loading. Cached in
+  // chatSessionProvider (not local State) so it survives this screen being
+  // popped and reopened, same reasoning as the transcript above - but the
+  // cached session's system prompt hardcodes "reply ONLY in <language>", so
+  // it must be rebuilt (not reused) if the karigar changed the app's
+  // language since it was created, or every future reply would keep coming
+  // back in the old language regardless of what they asked for.
   AgentSession _getSession() {
-    if (_session != null) return _session!;
+    final lang = ref.read(languageProvider);
+    final existing = ref.read(chatSessionProvider);
+    if (existing != null && existing.languageCode == lang.code) {
+      return existing.session;
+    }
     final ai = ref.read(aiAssistantServiceProvider);
     final woo = ref.read(wooServiceProvider);
-    final lang = ref.read(languageProvider);
-    _session = ai.createSession(
+    // Use the app-wide ProviderContainer, not this screen's own `ref`, for
+    // the getters below: the session (and these closures) are cached in
+    // chatSessionProvider specifically to outlive this screen being closed
+    // and reopened. `ref.read` tied to this State would start throwing the
+    // moment this screen is disposed - exactly why every tool call ("show my
+    // orders", "link for my product") started failing while plain chat kept
+    // working fine, once the karigar had closed and reopened the assistant
+    // even once. The container itself lives for the whole app.
+    final container = ProviderScope.containerOf(context, listen: false);
+    final session = ai.createSession(
       accountContext: _buildAccountContext(),
       languageCode: lang.code,
       woo: woo,
+      getProducts: () => container.read(productsProvider),
+      getOrders: () => container.read(ordersProvider),
     );
-    return _session!;
+    ref.read(chatSessionProvider.notifier).set(session, lang.code);
+    return session;
   }
 
   String _buildAccountContext() {
@@ -98,20 +128,20 @@ class _State extends ConsumerState<AiAssistantScreen> {
     final productLines = products.isEmpty
         ? '- (none yet)'
         : products
-              .map(
-                (p) =>
-                    '- "${p.title}" (${p.category}): price ₹${p.price.toStringAsFixed(0)}, qty ${p.quantity}${p.wooId != null ? ', wooId ${p.wooId}' : ''}',
-              )
-              .join('\n');
+            .map(
+              (p) =>
+                  '- "${p.title}" (${p.category}): price ₹${p.price.toStringAsFixed(0)}, qty ${p.quantity}${p.wooId != null ? ', wooId ${p.wooId}' : ''}',
+            )
+            .join('\n');
 
     final orderLines = orders.isEmpty
         ? '- (none yet)'
         : orders
-              .map(
-                (o) =>
-                    '- Order #${o.id}: "${o.productTitle}" ×${o.quantity}, ₹${o.total.toStringAsFixed(0)}, status: ${o.status.name}, customer: ${o.customerName}',
-              )
-              .join('\n');
+            .map(
+              (o) =>
+                  '- Order #${o.id}: "${o.productTitle}" ×${o.quantity}, ₹${o.total.toStringAsFixed(0)}, status: ${o.status.name}, customer: ${o.customerName}',
+            )
+            .join('\n');
 
     return '''
 Seller name: ${user.fullName}
@@ -143,8 +173,8 @@ $orderLines
     final content = (text ?? _input.text).trim();
     if (content.isEmpty) return;
 
+    ref.read(chatMessagesProvider.notifier).add(ChatMessage(content, false));
     setState(() {
-      _messages.add(_ChatMessage(content, false));
       _input.clear();
       _sending = true;
     });
@@ -157,8 +187,10 @@ $orderLines
     if (!mounted) return;
 
     final responseText = response.isError ? tr('aiError') : response.text;
+    ref
+        .read(chatMessagesProvider.notifier)
+        .add(ChatMessage(responseText, true));
     setState(() {
-      _messages.add(_ChatMessage(responseText, true));
       _sending = false;
     });
     _scrollToBottom();
@@ -172,10 +204,12 @@ $orderLines
 
     if (response.navigateTo != null && widget.onNavigateTo != null) {
       final target = response.navigateTo!;
+      final editProductId = response.editProductId;
       final callback = widget.onNavigateTo!;
       Navigator.of(context).pop();
       // Let the pop animation finish before opening the next modal.
-      WidgetsBinding.instance.addPostFrameCallback((_) => callback(target));
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => callback(target, editProductId: editProductId));
     }
   }
 
@@ -185,7 +219,11 @@ $orderLines
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Audio error: $e'), duration: const Duration(seconds: 3)),
+          SnackBar(
+            key: const Key('ai_assistant_audio_error_message'),
+            content: Text('${ref.read(trProvider)('audioErrorPrefix')}: $e'),
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     }
@@ -203,9 +241,10 @@ $orderLines
       final status = await Permission.microphone.request();
       if (status != PermissionStatus.granted) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(tr('micPermissionDenied'))));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            key: const Key('ai_assistant_mic_permission_denied_message'),
+            content: Text(tr('micPermissionDenied')),
+          ));
         }
         return;
       }
@@ -252,9 +291,10 @@ $orderLines
 
     if (result == null || result.transcript.isEmpty) {
       final tr = ref.read(trProvider);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(tr('voiceNotCaptured'))));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        key: const Key('ai_assistant_voice_not_captured_message'),
+        content: Text(tr('voiceNotCaptured')),
+      ));
       return;
     }
 
@@ -264,6 +304,7 @@ $orderLines
   @override
   Widget build(BuildContext context) {
     final tr = ref.watch(trProvider);
+    final messages = ref.watch(chatMessagesProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -280,7 +321,32 @@ $orderLines
                 ),
               ),
               const Spacer(),
+              PopupMenuButton<double>(
+                key: const Key('ai_assistant_speed_button'),
+                tooltip: tr('speechSpeedTooltip'),
+                icon: const Icon(Icons.speed),
+                initialValue: _speechRate,
+                onSelected: (rate) async {
+                  await TTSService.setSpeechRate(rate);
+                  if (mounted) setState(() => _speechRate = rate);
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: TTSService.slowSpeechRate,
+                    child: Text(tr('speedSlow')),
+                  ),
+                  PopupMenuItem(
+                    value: TTSService.defaultSpeechRate,
+                    child: Text(tr('speedNormal')),
+                  ),
+                  PopupMenuItem(
+                    value: TTSService.fastSpeechRate,
+                    child: Text(tr('speedFast')),
+                  ),
+                ],
+              ),
               IconButton(
+                key: const Key('ai_assistant_close_button'),
                 onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(Icons.close),
               ),
@@ -291,14 +357,17 @@ $orderLines
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: _messages.length + (_sending ? 1 : 0),
+              itemCount: messages.length + (_sending ? 1 : 0),
               itemBuilder: (_, i) {
-                if (i == _messages.length) return const _Typing();
-                final m = _messages[i];
+                if (i == messages.length) {
+                  return const _Typing(
+                      key: Key('ai_assistant_typing_indicator'));
+                }
+                final m = messages[i];
                 return Align(
-                  alignment: m.fromAi
-                      ? Alignment.centerLeft
-                      : Alignment.centerRight,
+                  key: ValueKey('ai_assistant_response_text_$i'),
+                  alignment:
+                      m.fromAi ? Alignment.centerLeft : Alignment.centerRight,
                   child: Container(
                     margin: const EdgeInsets.symmetric(vertical: 4),
                     padding: const EdgeInsets.all(12),
@@ -310,7 +379,7 @@ $orderLines
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Text(
+                    child: SelectableText(
                       m.text,
                       style: TextStyle(
                         color: m.fromAi ? AppColors.text : Colors.white,
@@ -337,16 +406,41 @@ $orderLines
                 children: [
                   Expanded(
                     child: TextField(
+                      key: const Key('ai_assistant_input_field'),
                       controller: _input,
                       decoration: InputDecoration(hintText: tr('typeMessage')),
                       onSubmitted: _send,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  VoiceButton(
-                    size: 48,
-                    listening: _listening,
-                    onTap: _toggleVoice,
+                  // Send takes the trailing slot (where users instinctively
+                  // reach) whenever there's typed text; mic only occupies it
+                  // when the field is empty. Previously the mic button sat
+                  // here unconditionally, so a typed query got mistakenly
+                  // tapped-as-send-via-mic, which both failed to send it and
+                  // wiped it via _send()'s clear-on-submit.
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _input,
+                    builder: (_, value, __) {
+                      if (value.text.trim().isNotEmpty) {
+                        return IconButton(
+                          key: const Key('ai_assistant_send_button'),
+                          onPressed: () => _send(),
+                          icon: const Icon(Icons.send),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(48, 48),
+                          ),
+                        );
+                      }
+                      return VoiceButton(
+                        key: const Key('ai_assistant_voice_button'),
+                        size: 48,
+                        listening: _listening,
+                        onTap: _toggleVoice,
+                      );
+                    },
                   ),
                 ],
               ),
@@ -359,7 +453,7 @@ $orderLines
 }
 
 class _Typing extends StatelessWidget {
-  const _Typing();
+  const _Typing({super.key});
 
   @override
   Widget build(BuildContext context) {

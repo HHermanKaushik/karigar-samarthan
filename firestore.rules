@@ -30,5 +30,14 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow read, update, delete: if false;
     }
+
+    // flagged_listings — write-only moderation audit log from the app
+    // (add_product_flow._logFlaggedListing), same access shape as
+    // sync_errors above. Reviewed via the listFlaggedListings Cloud
+    // Function, which uses the Admin SDK and bypasses these rules.
+    match /flagged_listings/{docId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if false;
+    }
   }
 }

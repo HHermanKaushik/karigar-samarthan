@@ -1,14 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../core/theme/app_colors.dart';
 import '../../models/product.dart';
+import '../../providers/language_provider.dart';
+import '../../providers/product_translation_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../providers/translations_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../services/service_providers.dart';
 
 class EditProductScreen extends ConsumerStatefulWidget {
@@ -23,23 +27,122 @@ class EditProductScreen extends ConsumerStatefulWidget {
   ConsumerState<EditProductScreen> createState() => _State();
 }
 
+/// One of the product's pre-existing photos, shown and individually
+/// removable alongside newly picked ones (see _State._existingImages).
+class _ExistingImage {
+  final String? localPath;
+  final String? wooUrl;
+  const _ExistingImage({this.localPath, this.wooUrl});
+}
+
 class _State extends ConsumerState<EditProductScreen> {
-  late final TextEditingController _title =
-      TextEditingController(text: widget.product.title);
-  late final TextEditingController _category =
-      TextEditingController(text: widget.product.category);
+  late final TextEditingController _title;
+  late final TextEditingController _category;
   late final TextEditingController _price =
       TextEditingController(text: widget.product.price.toStringAsFixed(0));
   late final TextEditingController _qty =
       TextEditingController(text: widget.product.quantity.toString());
-  late final TextEditingController _desc =
-      TextEditingController(text: widget.product.description);
+  late final TextEditingController _desc;
 
+  // Newly picked photos this session, additive alongside _existingImages -
+  // adding a photo no longer replaces what was already there.
   final List<File> _images = [];
+
+  // The product's pre-existing photos that are still being kept (removing
+  // one via the X button splices it out of this list, same as _removeImage
+  // does for _images).
+  late final List<_ExistingImage> _existingImages;
+
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
   bool _saving = false;
   bool _archiving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Prefer the karigar's own words if this product was captured in the
+    // app's current language - otherwise fall back to the English text
+    // (e.g. a product added while the app was in a different language, or
+    // an older product from before this was tracked at all).
+    final langCode = ref.read(languageProvider).code;
+    _title = TextEditingController(text: widget.product.displayTitle(langCode));
+    _category =
+        TextEditingController(text: widget.product.displayCategory(langCode));
+    _desc = TextEditingController(
+        text: widget.product.displayDescription(langCode));
+
+    // Reconciles local file paths with WooCommerce URLs by position - both
+    // lists are populated together, in the same order, at add/edit time.
+    // wooImageUrl (singular) is the pre-multi-image fallback for products
+    // saved before wooImageUrls existed.
+    final urls = widget.product.wooImageUrls.isNotEmpty
+        ? widget.product.wooImageUrls
+        : (widget.product.wooImageUrl != null
+            ? [widget.product.wooImageUrl!]
+            : const <String>[]);
+    final count = widget.product.imagePaths.length > urls.length
+        ? widget.product.imagePaths.length
+        : urls.length;
+    _existingImages = [
+      for (var i = 0; i < count; i++)
+        _ExistingImage(
+          localPath: i < widget.product.imagePaths.length
+              ? widget.product.imagePaths[i]
+              : null,
+          wooUrl: i < urls.length ? urls[i] : null,
+        ),
+    ];
+
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _liveTranslateFieldsIfNeeded());
+  }
+
+  // The fast path above (displayTitle/displayCategory/displayDescription)
+  // only shows the karigar's own words when this exact product was last
+  // saved in the app's current language. Every other case - a product made
+  // in a different language, or one from before local* was tracked at all -
+  // needs an actual live translation of the canonical English text, same as
+  // the Home screen tiles (see product_translation_provider.dart).
+  Future<void> _liveTranslateFieldsIfNeeded() async {
+    final lang = ref.read(languageProvider);
+    if (lang.code == 'en') return;
+    if (widget.product.localLanguageCode == lang.code) return;
+
+    final cache = ref.read(productTranslationCacheProvider.notifier);
+
+    Future<void> translateField(
+      TextEditingController controller,
+      String english,
+      String field,
+    ) async {
+      if (english.trim().isEmpty) return;
+      final key =
+          ProductTranslationCache.cacheKey(widget.product.id, field, lang.code);
+      final before = controller.text;
+      await cache.ensureTranslated(
+        cacheKey: key,
+        text: english,
+        targetSarvamCode: lang.sarvamCode,
+      );
+      if (!mounted) return;
+      final translated = ref.read(productTranslationCacheProvider)[key];
+      // Only overwrite if the karigar hasn't already started editing this
+      // field while the translation was in flight.
+      if (translated != null && controller.text == before) {
+        controller.text = translated;
+      }
+    }
+
+    await Future.wait([
+      translateField(_title, widget.product.title, 'title'),
+      translateField(_category, widget.product.category, 'category'),
+      translateField(_desc, widget.product.description, 'description'),
+    ]);
+  }
+
+  void _removeExistingImage(int index) =>
+      setState(() => _existingImages.removeAt(index));
 
   @override
   void dispose() {
@@ -55,12 +158,38 @@ class _State extends ConsumerState<EditProductScreen> {
     if (_saving) return;
     setState(() => _saving = true);
 
+    // Listings must always be stored/published in English, regardless of
+    // which language the karigar used to edit them (voice/typed) — the
+    // storefront and other karigars/shoppers all expect English text.
+    final lang = ref.read(languageProvider);
+    final sarvam = ref.read(sarvamServiceProvider);
+    Future<String> toEnglish(String text) async {
+      if (text.trim().isEmpty) return text;
+      return await sarvam.translateText(
+            text: text,
+            targetLanguageCode: 'en-IN',
+            sourceLanguageCode: lang.sarvamCode,
+          ) ??
+          text;
+    }
+
     final updated = widget.product.copyWith(
-      title: _title.text.trim(),
-      category: _category.text.trim(),
-      description: _desc.text.trim(),
+      title: await toEnglish(_title.text.trim()),
+      category: await toEnglish(_category.text.trim()),
+      description: await toEnglish(_desc.text.trim()),
+      // Keeps the karigar's own words viewable in-app when they're back on
+      // this same language - see Product.displayTitle() and friends.
+      localTitle: lang.code != 'en' ? _title.text.trim() : '',
+      localCategory: lang.code != 'en' ? _category.text.trim() : '',
+      localDescription: lang.code != 'en' ? _desc.text.trim() : '',
+      localLanguageCode: lang.code != 'en' ? lang.code : null,
       price: double.tryParse(_price.text.trim()) ?? widget.product.price,
       quantity: int.tryParse(_qty.text.trim()) ?? widget.product.quantity,
+      imagePaths: [
+        for (final e in _existingImages)
+          if (e.localPath != null) e.localPath!,
+        ..._images.map((f) => f.path),
+      ],
     );
 
     ref.read(productsProvider.notifier).update(updated);
@@ -73,6 +202,13 @@ class _State extends ConsumerState<EditProductScreen> {
         description: updated.description,
         price: _price.text.trim(),
         quantity: updated.quantity,
+        category: updated.category,
+        storeName: ref.read(userProvider).storeName,
+        newImageFiles: _images,
+        keepImageUrls: [
+          for (final e in _existingImages)
+            if (e.wooUrl != null) e.wooUrl!,
+        ],
       );
 
       if (!mounted) return;
@@ -86,10 +222,20 @@ class _State extends ConsumerState<EditProductScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Product updated on the live store.'),
+      if (result.imageUrls.isNotEmpty || result.permalink != null) {
+        ref.read(productsProvider.notifier).update(updated.copyWith(
+              wooImageUrl: result.imageUrl,
+              wooImageUrls:
+                  result.imageUrls.isNotEmpty ? result.imageUrls : null,
+              permalink: result.permalink,
+            ));
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ref.read(trProvider)('productUpdatedOnStore')),
       ));
     } else {
+      if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(_images.isEmpty
@@ -102,22 +248,21 @@ class _State extends ConsumerState<EditProductScreen> {
   }
 
   Future<void> _archive() async {
+    final tr = ref.read(trProvider);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Archive Product'),
-        content: const Text(
-          'This product will be hidden from your list. It will remain on your WooCommerce store and can be restored from there.',
-        ),
+        title: Text(tr('archiveProductTitle')),
+        content: Text(tr('archiveProductConfirmMessage')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(tr('cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Archive'),
+            child: Text(tr('archiveAction')),
           ),
         ],
       ),
@@ -125,6 +270,12 @@ class _State extends ConsumerState<EditProductScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _archiving = true);
     await ref.read(productsProvider.notifier).archive(widget.product.id);
+    if (widget.product.wooId != null) {
+      await ref.read(wooServiceProvider).setProductArchived(
+            wooId: widget.product.wooId!,
+            archived: true,
+          );
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -135,6 +286,80 @@ class _State extends ConsumerState<EditProductScreen> {
   }
 
   void _removeImage(int index) => setState(() => _images.removeAt(index));
+
+  /// One tile in the combined photo gallery, for either an existing photo
+  /// (local file first, falling back to the WooCommerce URL if the local
+  /// file is gone, e.g. after a reinstall - same fallback chain used for
+  /// thumbnails on the home screen) or a newly picked one. Multiple
+  /// existing/new photos can coexist and are each individually removable -
+  /// adding a photo no longer replaces what was already there.
+  Widget _buildGalleryTile({
+    required Widget image,
+    required VoidCallback onRemove,
+    Key? key,
+  }) {
+    return Stack(
+      key: key,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(right: 12),
+          width: 130,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
+          child: image,
+        ),
+        Positioned(
+          top: 6,
+          right: 18,
+          child: GestureDetector(
+            onTap: onRemove,
+            child: const CircleAvatar(
+              radius: 13,
+              backgroundColor: Colors.red,
+              child: Icon(Icons.close, size: 15, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExistingImageTile(int index) {
+    final e = _existingImages[index];
+    Widget image;
+    if (e.localPath != null) {
+      image = Image.file(
+        File(e.localPath!),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => e.wooUrl != null
+            ? Image.network(
+                e.wooUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.image_outlined,
+                      size: 42, color: AppColors.primary),
+                ),
+              )
+            : const Center(
+                child: Icon(Icons.image_outlined,
+                    size: 42, color: AppColors.primary),
+              ),
+      );
+    } else {
+      image = Image.network(
+        e.wooUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.image_outlined, size: 42, color: AppColors.primary),
+        ),
+      );
+    }
+    return _buildGalleryTile(
+      key: ValueKey('existing_image_$index'),
+      image: image,
+      onRemove: () => _removeExistingImage(index),
+    );
+  }
 
   Future<void> _listen(TextEditingController controller) async {
     if (!_isListening) {
@@ -182,8 +407,8 @@ class _State extends ConsumerState<EditProductScreen> {
               if (widget.product.wooId == null)
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.amber.shade50,
                     borderRadius: BorderRadius.circular(10),
@@ -218,44 +443,24 @@ class _State extends ConsumerState<EditProductScreen> {
                 child: Column(
                   children: [
                     Expanded(
-                      child: _images.isEmpty
+                      child: (_existingImages.isEmpty && _images.isEmpty)
                           ? const Center(
                               child: Icon(Icons.add_a_photo_outlined,
                                   size: 54, color: AppColors.primary))
                           : ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              itemCount: _images.length,
+                              itemCount:
+                                  _existingImages.length + _images.length,
                               itemBuilder: (_, i) {
-                                return Stack(
-                                  children: [
-                                    Container(
-                                      margin:
-                                          const EdgeInsets.only(right: 12),
-                                      width: 130,
-                                      decoration: BoxDecoration(
-                                        borderRadius:
-                                            BorderRadius.circular(16),
-                                        image: DecorationImage(
-                                          image: FileImage(_images[i]),
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 6,
-                                      right: 18,
-                                      child: GestureDetector(
-                                        onTap: () => _removeImage(i),
-                                        child: const CircleAvatar(
-                                          radius: 13,
-                                          backgroundColor: Colors.red,
-                                          child: Icon(Icons.close,
-                                              size: 15,
-                                              color: Colors.white),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                if (i < _existingImages.length) {
+                                  return _buildExistingImageTile(i);
+                                }
+                                final newIndex = i - _existingImages.length;
+                                return _buildGalleryTile(
+                                  key: ValueKey('new_image_$newIndex'),
+                                  image: Image.file(_images[newIndex],
+                                      fit: BoxFit.cover),
+                                  onRemove: () => _removeImage(newIndex),
                                 );
                               },
                             ),
@@ -298,6 +503,7 @@ class _State extends ConsumerState<EditProductScreen> {
                         label: tr('qty'),
                         controller: _qty,
                         number: true,
+                        integerOnly: true,
                         onMic: () => _listen(_qty)),
                   ),
                 ],
@@ -342,8 +548,9 @@ class _State extends ConsumerState<EditProductScreen> {
               TextButton.icon(
                 onPressed: (_saving || _archiving) ? null : _archive,
                 icon: const Icon(Icons.archive_outlined, size: 18),
-                label: const Text('Archive Product'),
-                style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+                label: Text(tr('archiveProductTitle')),
+                style:
+                    TextButton.styleFrom(foregroundColor: Colors.red.shade700),
               ),
             ],
           ),
@@ -357,6 +564,7 @@ class _Field extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final bool number;
+  final bool integerOnly;
   final int lines;
   final VoidCallback onMic;
 
@@ -365,6 +573,7 @@ class _Field extends StatelessWidget {
     required this.controller,
     required this.onMic,
     this.number = false,
+    this.integerOnly = false,
     this.lines = 1,
   });
 
@@ -378,8 +587,8 @@ class _Field extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8),
             child: Text(label,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 15)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
           ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,8 +596,18 @@ class _Field extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
-                  keyboardType:
-                      number ? TextInputType.number : TextInputType.multiline,
+                  keyboardType: !number
+                      ? TextInputType.multiline
+                      : integerOnly
+                          ? TextInputType.number
+                          : const TextInputType.numberWithOptions(
+                              decimal: true),
+                  // Quantity is a count of physical items - "2.5" isn't a
+                  // valid quantity, so digits-only here (unlike Price,
+                  // which legitimately needs a decimal point for paise).
+                  inputFormatters: integerOnly
+                      ? [FilteringTextInputFormatter.digitsOnly]
+                      : null,
                   maxLines: lines,
                 ),
               ),

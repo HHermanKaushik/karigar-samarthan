@@ -17,6 +17,10 @@ class UserProfile {
   final bool paymentSetup;
   final String upiId;
 
+  /// Firebase Storage download URL for the karigar's own profile/store
+  /// photo, shown at the top of My Account. Empty until they upload one.
+  final String photoUrl;
+
   const UserProfile({
     required this.fullName,
     required this.storeName,
@@ -24,6 +28,7 @@ class UserProfile {
     this.role = 'Master Artisan',
     this.paymentSetup = false,
     this.upiId = '',
+    this.photoUrl = '',
   });
 
   UserProfile copyWith({
@@ -33,6 +38,7 @@ class UserProfile {
     String? role,
     bool? paymentSetup,
     String? upiId,
+    String? photoUrl,
   }) =>
       UserProfile(
         fullName: fullName ?? this.fullName,
@@ -41,6 +47,7 @@ class UserProfile {
         role: role ?? this.role,
         paymentSetup: paymentSetup ?? this.paymentSetup,
         upiId: upiId ?? this.upiId,
+        photoUrl: photoUrl ?? this.photoUrl,
       );
 }
 
@@ -66,6 +73,7 @@ class UserNotifier extends StateNotifier<UserProfile> {
         phone: prefs.getString('user_phone') ?? state.phone,
         paymentSetup: prefs.getBool('user_payment') ?? state.paymentSetup,
         upiId: prefs.getString('user_upi_id') ?? state.upiId,
+        photoUrl: prefs.getString('user_photo_url') ?? state.photoUrl,
       );
       return;
     }
@@ -88,6 +96,7 @@ class UserNotifier extends StateNotifier<UserProfile> {
         role: d['role'] ?? 'Master Artisan',
         paymentSetup: d['paymentSetup'] as bool? ?? false,
         upiId: d['upiId'] as String? ?? '',
+        photoUrl: d['photoUrl'] as String? ?? '',
       );
       state = profile;
       await prefs.setString('user_name', profile.fullName);
@@ -95,6 +104,7 @@ class UserNotifier extends StateNotifier<UserProfile> {
       await prefs.setString('user_phone', profile.phone);
       await prefs.setBool('user_payment', profile.paymentSetup);
       await prefs.setString('user_upi_id', profile.upiId);
+      await prefs.setString('user_photo_url', profile.photoUrl);
     } catch (_) {}
   }
 
@@ -106,6 +116,7 @@ class UserNotifier extends StateNotifier<UserProfile> {
     await prefs.setString('user_phone', p.phone);
     await prefs.setBool('user_payment', p.paymentSetup);
     await prefs.setString('user_upi_id', p.upiId);
+    await prefs.setString('user_photo_url', p.photoUrl);
   }
 
   Future<void> save(UserProfile p) async {
@@ -121,6 +132,7 @@ class UserNotifier extends StateNotifier<UserProfile> {
     await prefs.remove('user_phone');
     await prefs.remove('user_payment');
     await prefs.remove('user_upi_id');
+    await prefs.remove('user_photo_url');
   }
 }
 

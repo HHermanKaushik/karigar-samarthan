@@ -6,6 +6,24 @@ service firebase.storage {
       allow read: if true;
       allow write: if request.auth != null;
     }
+    // Flagged-listing photos (moderation audit trail) — same shape as
+    // products above. Read stays open since listFlaggedListings renders
+    // these as <img> tags for review; the review page itself is
+    // token-gated separately.
+    match /flagged_listings/{docId}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Profile/store photos, uploaded as profile_photos/{uid}.jpg. Read is
+    // public (shown on the storefront's WooCommerce Brand image, not just
+    // in-app). Write is restricted to the matching uid, unlike the looser
+    // any-authenticated-user pattern above, since the filename here maps
+    // directly to one specific account.
+    match /profile_photos/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+                    && fileName == request.auth.uid + '.jpg';
+    }
     // Deny everything else by default.
     match /{allPaths=**} {
       allow read, write: if false;

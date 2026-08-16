@@ -48,9 +48,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', builder: (_, __) => const LanguageScreen()),
       GoRoute(path: '/signup', builder: (_, __) => const SignupScreen()),
-      GoRoute(path: '/payment-setup', builder: (_, __) => const PaymentSetupScreen()),
+      GoRoute(
+          path: '/payment-setup',
+          builder: (_, __) => const PaymentSetupScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-      GoRoute(path: '/otp',
+      GoRoute(
+        path: '/otp',
         builder: (context, state) {
           final args = state.extra as OtpRoutingData;
           return OtpScreen(routingData: args);

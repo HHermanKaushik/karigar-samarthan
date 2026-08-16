@@ -40,6 +40,7 @@ class _State extends ConsumerState<PaymentSetupScreen> {
 
     if (!skipped && upiId.isNotEmpty && !isValidUpiId(upiId)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        key: Key('payment_validation_error_message'),
         content: Text(
             'Please enter a valid UPI ID (e.g. yourname@oksbi or 9876543210@ybl)'),
       ));
@@ -85,8 +86,10 @@ class _State extends ConsumerState<PaymentSetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar:
-          AppBar(leading: BackButton(onPressed: () => context.go('/signup'))),
+      appBar: AppBar(
+          leading: BackButton(
+              key: const Key('payment_back_button'),
+              onPressed: () => context.go('/signup'))),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
@@ -112,6 +115,7 @@ class _State extends ConsumerState<PaymentSetupScreen> {
                 hint: 'e.g. yourname@oksbi  or  9876543210@ybl',
                 controller: _upiId,
                 keyboardType: TextInputType.emailAddress,
+                fieldKey: const Key('payment_upi_field'),
               ),
               Container(
                 margin: const EdgeInsets.only(bottom: 20),
@@ -119,8 +123,7 @@ class _State extends ConsumerState<PaymentSetupScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.06),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: AppColors.primary.withOpacity(0.2)),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.2)),
                 ),
                 child: const Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,19 +135,23 @@ class _State extends ConsumerState<PaymentSetupScreen> {
                       child: Text(
                         'Your UPI ID is safe. It will only be shown to customers who have already purchased your product so they can complete payment.',
                         style: TextStyle(
-                            fontSize: 13, color: AppColors.textMuted, height: 1.4),
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                            height: 1.4),
                       ),
                     ),
                   ],
                 ),
               ),
               ElevatedButton.icon(
+                key: const Key('payment_save_button'),
                 onPressed: _saving ? null : () => _save(skipped: false),
                 icon: _saving
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
+                          key: Key('payment_save_spinner'),
                           strokeWidth: 2,
                           color: Colors.white,
                         ),
@@ -154,6 +161,7 @@ class _State extends ConsumerState<PaymentSetupScreen> {
               ),
               const SizedBox(height: 12),
               TextButton(
+                key: const Key('payment_skip_button'),
                 onPressed: _saving ? null : () => _save(skipped: true),
                 child: const Text('Do this later'),
               ),
@@ -170,11 +178,13 @@ class _LabelField extends StatelessWidget {
   final String? hint;
   final TextEditingController controller;
   final TextInputType? keyboardType;
+  final Key? fieldKey;
   const _LabelField(
       {required this.label,
       required this.controller,
       this.hint,
-      this.keyboardType});
+      this.keyboardType,
+      this.fieldKey});
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +199,7 @@ class _LabelField extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
           TextField(
+            key: fieldKey,
             controller: controller,
             keyboardType: keyboardType,
             decoration: InputDecoration(hintText: hint),

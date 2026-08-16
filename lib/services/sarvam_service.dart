@@ -17,7 +17,7 @@ class SttResult {
 /// Thin wrapper around Sarvam AI's Speech-to-Text and Text-to-Speech REST
 /// APIs (https://api.sarvam.ai).
 ///
-/// - STT: POST /speech-to-text (multipart, model `saarika:v2.5`)
+/// - STT: POST /speech-to-text (multipart, model `saaras:v3`, mode `transcribe`)
 /// - TTS: POST /text-to-speech (JSON, model `bulbul:v3`) — returns
 ///   base64-encoded WAV audio.
 ///
@@ -61,7 +61,8 @@ class SarvamService {
 
     try {
       final formData = FormData.fromMap({
-        'model': 'saarika:v2.5',
+        'model': 'saaras:v3',
+        'mode': 'transcribe',
         'language_code': languageCode,
         'file': await MultipartFile.fromFile(
           audioFile.path,
@@ -140,11 +141,13 @@ class SarvamService {
   /// failure.
   ///
   /// [languageCode] should be a Sarvam BCP-47 code (e.g. `hi-IN`) — see
-  /// [AppLanguage.sarvamCode].
+  /// [AppLanguage.sarvamCode]. [pace] is bulbul:v3's speed control, 0.5
+  /// (slowest) to 2.0 (fastest), 1.0 = normal.
   Future<Uint8List?> textToSpeech({
     required String text,
     required String languageCode,
-    String speaker = 'anushka',
+    String speaker = 'kavya',
+    double pace = 1.0,
   }) async {
     if (_apiKey.isEmpty) {
       await _logger.logError(
@@ -169,6 +172,7 @@ class SarvamService {
           'target_language_code': languageCode,
           'speaker': speaker,
           'model': 'bulbul:v3',
+          'pace': pace,
         },
         options: Options(headers: {'api-subscription-key': _apiKey}),
       );

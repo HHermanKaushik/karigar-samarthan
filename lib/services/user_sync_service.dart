@@ -30,12 +30,15 @@ class UserSyncService {
   UserSyncService({SyncLogger? logger}) : _logger = logger ?? SyncLogger() {
     final baseUrl = (dotenv.env['WOOCOMMERCE_BASE_URL'] ?? '').trim();
     if (baseUrl.isEmpty) {
-      debugPrint('UserSyncService: WOOCOMMERCE_BASE_URL not set — WooCommerce sync disabled');
+      debugPrint(
+          'UserSyncService: WOOCOMMERCE_BASE_URL not set — WooCommerce sync disabled');
     }
 
     _dio = Dio(
       BaseOptions(
-        baseUrl: baseUrl.isNotEmpty ? '$baseUrl/wp-json/wc/v3/' : 'https://localhost/wp-json/wc/v3/',
+        baseUrl: baseUrl.isNotEmpty
+            ? '$baseUrl/wp-json/wc/v3/'
+            : 'https://localhost/wp-json/wc/v3/',
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 30),
         queryParameters: {
@@ -73,7 +76,15 @@ class UserSyncService {
       final existing = await userDocRef.get();
       int? wooCustomerId = existing.data()?['wooCustomerId'] as int?;
 
-      wooCustomerId ??= await _syncWooCustomer(profile, uid);
+      // Create the WooCommerce customer once, but keep it updated on every
+      // subsequent save - previously this only ever ran on the very first
+      // sync (`??=`), so a Store Name (or name/phone) change in the app
+      // never reached the customer's WooCommerce record after that.
+      if (wooCustomerId == null) {
+        wooCustomerId = await _syncWooCustomer(profile, uid);
+      } else {
+        await _updateWooCustomer(wooCustomerId, profile);
+      }
 
       await userDocRef.set({
         'fullName': profile.fullName,
@@ -82,6 +93,7 @@ class UserSyncService {
         'role': profile.role,
         'paymentSetup': profile.paymentSetup,
         'upiId': profile.upiId,
+        'photoUrl': profile.photoUrl,
         if (wooCustomerId != null) 'wooCustomerId': wooCustomerId,
         'updatedAt': FieldValue.serverTimestamp(),
         if (!existing.exists) 'createdAt': FieldValue.serverTimestamp(),
@@ -104,7 +116,8 @@ class UserSyncService {
     if (user == null) {
       throw FirebaseAuthException(
         code: 'not-authenticated',
-        message: 'No authenticated active user session found during synchronization.',
+        message:
+            'No authenticated active user session found during synchronization.',
       );
     }
     return user.uid;
@@ -168,6 +181,40 @@ class UserSyncService {
         context: {'uid': uid, 'email': email},
       );
       return null;
+    }
+  }
+
+  /// Pushes name/phone/store-name changes onto an already-created
+  /// WooCommerce customer record - without this, everything but the very
+  /// first save was silently dropped (see the call site's comment).
+  Future<void> _updateWooCustomer(
+      int wooCustomerId, UserProfile profile) async {
+    final nameParts = profile.fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final firstName = nameParts.isNotEmpty ? nameParts.first : profile.fullName;
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+    try {
+      await _dio.put('customers/$wooCustomerId', data: {
+        'first_name': firstName,
+        'last_name': lastName,
+        'billing': {
+          'first_name': firstName,
+          'last_name': lastName,
+          'phone': profile.phone,
+          'company': profile.storeName,
+        },
+      });
+    } catch (e, st) {
+      await _logger.logError(
+        'woo_customer_update',
+        e,
+        stackTrace: st,
+        context: {'wooCustomerId': wooCustomerId},
+      );
     }
   }
 }

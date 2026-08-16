@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_modal.dart';
+import '../../models/app_language.dart';
 import '../../models/product.dart';
+import '../../providers/language_provider.dart';
+import '../../providers/product_translation_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
@@ -53,6 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = ref.watch(userProvider);
     final products = ref.watch(productsProvider);
     final tr = ref.watch(trProvider);
+    final lang = ref.watch(languageProvider);
 
     final List<List<Product>> columns = [];
     for (int i = 0; i < products.length; i += 2) {
@@ -62,6 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return SafeArea(
       child: RefreshIndicator(
+        key: const Key('home_refresh_indicator'),
         onRefresh: _syncProducts,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -69,130 +74,139 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            /// TOP BAR
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: widget.onAssistant,
-                    icon: const Icon(Icons.smart_toy_outlined,
-                        color: AppColors.primary),
-                    label: Text(tr('askAiAssistant'),
-                        style: const TextStyle(color: AppColors.primary)),
+              /// TOP BAR
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      key: const Key('home_ask_ai_button'),
+                      onPressed: widget.onAssistant,
+                      icon: const Icon(Icons.smart_toy_outlined,
+                          color: AppColors.primary),
+                      label: Text(tr('askAiAssistant'),
+                          style: const TextStyle(color: AppColors.primary)),
+                    ),
                   ),
-                ),
-                Semantics(
-                  button: true,
-                  label: tr('helpAndSupport'),
-                  child: IconButton(
-                    onPressed: widget.onHelp,
-                    icon: const Icon(Icons.help_outline,
-                        color: AppColors.primary),
+                  Semantics(
+                    button: true,
+                    label: tr('helpAndSupport'),
+                    child: IconButton(
+                      key: const Key('home_help_button'),
+                      onPressed: widget.onHelp,
+                      icon: const Icon(Icons.help_outline,
+                          color: AppColors.primary),
+                    ),
                   ),
-                ),
-                Semantics(
-                  button: true,
-                  label: tr('viewEditAccount'),
-                  child: InkWell(
-                    onTap: widget.onProfile,
-                    borderRadius: BorderRadius.circular(24),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: CircleAvatar(
-                        radius: 20,
-                        backgroundColor: AppColors.surface,
-                        child: Icon(Icons.person, color: AppColors.primary),
+                  Semantics(
+                    button: true,
+                    label: tr('viewEditAccount'),
+                    child: InkWell(
+                      key: const Key('home_profile_button'),
+                      onTap: widget.onProfile,
+                      borderRadius: BorderRadius.circular(24),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: CircleAvatar(
+                          radius: 20,
+                          backgroundColor: AppColors.surface,
+                          child: Icon(Icons.person, color: AppColors.primary),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-
-            /// TITLE
-            Text(
-              tr('myStore'),
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-
-            const SizedBox(height: 4),
-
-            /// GREETING
-            Text(
-              '${tr('welcomeBack')}, ${user.fullName.isEmpty ? "Seller" : user.fullName.split(' ').first}',
-              style: const TextStyle(color: AppColors.textMuted),
-            ),
-
-            const SizedBox(height: 18),
-
-            /// PRODUCTS
-            if (products.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  children: [
-                    const Icon(Icons.inventory_2_outlined,
-                        size: 64, color: AppColors.primary),
-                    const SizedBox(height: 14),
-                    Text(
-                      tr('noProductsYet'),
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      tr('tapToAddFirst'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textMuted),
-                    ),
-                  ],
-                ),
-              )
-            else
-              SizedBox(
-                height: 420,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: columns.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 14),
-                  itemBuilder: (context, index) {
-                    final col = columns[index];
-                    return SizedBox(
-                      width: 180,
-                      child: Column(
-                        children: col.map((p) {
-                          return Expanded(
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: _ProductTile(
-                                product: p,
-                                qtyLabel: tr('qty'),
-                                onTap: () => showAppModal(context,
-                                    child: EditProductScreen(product: p)),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    );
-                  },
-                ),
+                ],
               ),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 4),
 
-            _AddCard(label: tr('addNewProduct'), onTap: widget.onAddProduct),
-          ],
+              /// TITLE
+              Text(
+                tr('myStore'),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+
+              const SizedBox(height: 4),
+
+              /// GREETING
+              Text(
+                '${tr('welcomeBack')}, ${user.fullName.isEmpty ? "Seller" : user.fullName.split(' ').first}',
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
+
+              const SizedBox(height: 18),
+
+              /// PRODUCTS
+              if (products.isEmpty)
+                Container(
+                  key: const Key('home_empty_state'),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.inventory_2_outlined,
+                          size: 64, color: AppColors.primary),
+                      const SizedBox(height: 14),
+                      Text(
+                        tr('noProductsYet'),
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        tr('tapToAddFirst'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 420,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: columns.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 14),
+                    itemBuilder: (context, index) {
+                      final col = columns[index];
+                      return SizedBox(
+                        width: 180,
+                        child: Column(
+                          children: col.map((p) {
+                            return Expanded(
+                              child: Container(
+                                key: ValueKey('home_product_tile_${p.id}'),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: _ProductTile(
+                                  product: p,
+                                  qtyLabel: tr('qty'),
+                                  lang: lang,
+                                  onTap: () => showAppModal(context,
+                                      child: EditProductScreen(product: p)),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+
+              _AddCard(
+                  key: const Key('home_add_product_card'),
+                  label: tr('addNewProduct'),
+                  onTap: widget.onAddProduct),
+            ],
           ),
         ),
       ),
@@ -200,14 +214,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-class _ProductTile extends StatelessWidget {
+class _ProductTile extends ConsumerWidget {
   final Product product;
   final String qtyLabel;
+  final AppLanguage lang;
   final VoidCallback onTap;
 
   const _ProductTile({
     required this.product,
     required this.qtyLabel,
+    required this.lang,
     required this.onTap,
   });
 
@@ -227,7 +243,7 @@ class _ProductTile extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(20),
@@ -261,17 +277,26 @@ class _ProductTile extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                product.title,
+                watchTranslatedProductField(
+                  ref,
+                  product: product,
+                  field: ProductFieldText(
+                    english: product.title,
+                    local: product.localTitle,
+                    field: 'title',
+                  ),
+                  currentLanguageCode: lang.code,
+                  currentSarvamCode: lang.sarvamCode,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 14),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
               const SizedBox(height: 6),
               Text('₹ ${product.price.toStringAsFixed(0)}',
                   style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontWeight: FontWeight.w500)),
+                      color: AppColors.textMuted, fontWeight: FontWeight.w500)),
               const SizedBox(height: 4),
               Text('$qtyLabel: ${product.quantity}',
                   style: const TextStyle(
@@ -288,7 +313,7 @@ class _AddCard extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _AddCard({required this.label, required this.onTap});
+  const _AddCard({super.key, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

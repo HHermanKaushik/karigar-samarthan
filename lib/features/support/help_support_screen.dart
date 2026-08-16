@@ -8,19 +8,19 @@ import '../../providers/translations_provider.dart';
 import '../ai_assistant/ai_assistant_screen.dart';
 import 'faq_screen.dart';
 
-const String _whatsappNumber = '917350776098';
+const String _whatsappNumber = '918796577741';
 
 class HelpSupportScreen extends ConsumerWidget {
   const HelpSupportScreen({super.key});
 
-  Future<void> _openWhatsApp(BuildContext context) async {
+  Future<void> _openWhatsApp(BuildContext context, WidgetRef ref) async {
     final uri = Uri.parse(
         'https://wa.me/$_whatsappNumber?text=Hello%2C%20I%20need%20help%20with%20Karigar%20Samarthan.');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Could not open WhatsApp. Please check it is installed.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ref.read(trProvider)('whatsappOpenFailed')),
       ));
     }
   }
@@ -39,8 +39,8 @@ class HelpSupportScreen extends ConsumerWidget {
               const SizedBox(width: 8),
               Text(
                 tr('helpSupport'),
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               const Spacer(),
               IconButton(
@@ -59,7 +59,7 @@ class HelpSupportScreen extends ConsumerWidget {
                   iconColor: const Color(0xFF25D366), // WhatsApp green
                   title: tr('whatsappSupport'),
                   subtitle: tr('whatsappSupportSubtitle'),
-                  onTap: () => _openWhatsApp(context),
+                  onTap: () => _openWhatsApp(context, ref),
                 ),
                 const SizedBox(height: 12),
                 _SupportActionCard(
@@ -135,8 +135,7 @@ class _SupportActionCard extends StatelessWidget {
                             fontWeight: FontWeight.w700, fontSize: 16)),
                     const SizedBox(height: 2),
                     Text(subtitle,
-                        style:
-                            const TextStyle(color: AppColors.textMuted)),
+                        style: const TextStyle(color: AppColors.textMuted)),
                   ],
                 ),
               ),

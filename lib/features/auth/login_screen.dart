@@ -11,6 +11,7 @@ import '../../core/widgets/voice_button.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../services/service_providers.dart';
 
 enum _Step { phone, otp }
 
@@ -23,6 +24,56 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _phone = TextEditingController();
   bool _loading = false;
+  bool _sttReady = false;
+  bool _listening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initStt();
+  }
+
+  Future<void> _initStt() async {
+    final stt = ref.read(speechToTextProvider);
+    final ok = await stt.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+    );
+    if (ok && mounted) setState(() => _sttReady = true);
+  }
+
+  Future<void> _toggleVoicePhone() async {
+    final stt = ref.read(speechToTextProvider);
+
+    if (_listening) {
+      await stt.stop();
+      setState(() => _listening = false);
+      return;
+    }
+
+    if (!_sttReady) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ref.read(trProvider)('micUnavailable'))));
+      return;
+    }
+
+    setState(() => _listening = true);
+    stt.listen(
+      onResult: (r) {
+        if (r.finalResult) {
+          setState(() {
+            _phone.text = r.recognizedWords.replaceAll(RegExp(r'[^0-9]'), '');
+            _listening = false;
+          });
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
@@ -56,7 +107,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
           // Trigger the profile sync check
           final uid = FirebaseAuth.instance.currentUser!.uid;
-          final db = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'karigar');
+          final db = FirebaseFirestore.instanceFor(
+              app: Firebase.app(), databaseId: 'karigar');
           final doc = await db.collection('users').doc(uid).get();
 
           bool hasProfile = false;
@@ -66,20 +118,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             if (name.isNotEmpty) {
               hasProfile = true;
               await ref.read(userProvider.notifier).saveLocal(UserProfile(
-                fullName: d['fullName'] ?? '',
-                storeName: d['storeName'] ?? '',
-                phone: d['phone'] ?? '',
-                role: d['role'] ?? 'Master Artisan',
-                paymentSetup: d['paymentSetup'] as bool? ?? false,
-                upiId: d['upiId'] as String? ?? '',
-              ));
+                    fullName: d['fullName'] ?? '',
+                    storeName: d['storeName'] ?? '',
+                    phone: d['phone'] ?? '',
+                    role: d['role'] ?? 'Master Artisan',
+                    paymentSetup: d['paymentSetup'] as bool? ?? false,
+                    upiId: d['upiId'] as String? ?? '',
+                  ));
               await ref.read(onboardingProvider.notifier).complete();
             }
           }
 
           if (!mounted) return;
           setState(() => _loading = false);
-          context.go(hasProfile ? '/home' : '/signup');
+          if (hasProfile) {
+            context.go('/home');
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(ref.read(trProvider)('phoneNotRegistered'))),
+            );
+            context.go('/signup');
+          }
         } catch (_) {
           if (mounted) setState(() => _loading = false);
         }
@@ -140,14 +200,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  VoiceButton(size: 56, onTap: () {}),
+                  VoiceButton(
+                      size: 56,
+                      listening: _listening,
+                      onTap: _toggleVoicePhone),
                 ],
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _loading ? null : _submitLogin,
                 child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
                     : Text(tr('sendOtp')),
               ),
               const SizedBox(height: 16),

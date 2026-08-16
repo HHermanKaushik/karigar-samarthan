@@ -69,7 +69,7 @@ class LanguageScreen extends ConsumerWidget {
                 Expanded(
                   child: ListView.separated(
                     itemCount: AppLanguage.values.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
                       final lang = AppLanguage.values[i];
                       final isActive = lang == selected;
@@ -121,7 +121,7 @@ class _LanguageCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           child: Row(
             children: [
               // ICON CIRCLE

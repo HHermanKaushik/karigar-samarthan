@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,10 +13,28 @@ import 'firebase_options.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Android 15+ (SDK 35+) draws edge-to-edge by default and deprecates the
+  // old solid-color status/navigation bar APIs. Without this, the app falls
+  // back to a plain opaque black system navigation bar that clashes with
+  // the app's cream theme instead of properly extending app content behind
+  // transparent system bars (confirmed visually on a real SDK 36 device -
+  // this is also what Play Console's pre-launch report flags). Every screen
+  // that needs to avoid the status/navigation bar already uses SafeArea,
+  // which reads the insets this exposes.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.dark,
+  ));
+
   try {
     await dotenv.load(fileName: '.env');
   } catch (e) {
-    debugPrint('WARNING: Failed to load .env — API features will be disabled: $e');
+    debugPrint(
+        'WARNING: Failed to load .env — API features will be disabled: $e');
   }
 
   await Firebase.initializeApp(

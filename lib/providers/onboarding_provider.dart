@@ -25,5 +25,5 @@ class OnboardingNotifier extends StateNotifier<bool> {
   }
 }
 
-final onboardingProvider =
-    StateNotifierProvider<OnboardingNotifier, bool>((ref) => OnboardingNotifier());
+final onboardingProvider = StateNotifierProvider<OnboardingNotifier, bool>(
+    (ref) => OnboardingNotifier());

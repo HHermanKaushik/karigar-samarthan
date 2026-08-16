@@ -5,12 +5,15 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_modal.dart';
 import '../../core/widgets/voice_button.dart';
 import '../../providers/connectivity_provider.dart';
+import '../../providers/orders_seen_provider.dart';
+import '../../providers/products_provider.dart';
 import '../../providers/translations_provider.dart';
 import '../../services/ai_assistant_service.dart';
 import '../ai_assistant/ai_assistant_screen.dart';
 import '../home/home_screen.dart';
 import '../orders/orders_screen.dart';
 import '../products/add_product_flow.dart';
+import '../products/edit_product_screen.dart';
 import '../profile/profile_screen.dart';
 import '../support/faq_screen.dart';
 import '../support/help_support_screen.dart';
@@ -24,12 +27,15 @@ class StoreShell extends ConsumerStatefulWidget {
 }
 
 class _StoreShellState extends ConsumerState<StoreShell> {
-  void _openOrders() => showAppModal(context, child: const OrdersScreen());
+  void _openOrders() {
+    showAppModal(context, child: const OrdersScreen());
+  }
+
   void _openProfile() => showAppModal(context, child: const ProfileScreen());
   void _openAssistant() => showAppModal(
         context,
         child: AiAssistantScreen(
-          onNavigateTo: (target) {
+          onNavigateTo: (target, {editProductId}) {
             switch (target) {
               case NavigateTarget.orders:
                 _openOrders();
@@ -41,6 +47,12 @@ class _StoreShellState extends ConsumerState<StoreShell> {
                 _openHelp();
               case NavigateTarget.faq:
                 _openFaq();
+              case NavigateTarget.home:
+                // Home is always visible underneath; the AI modal has
+                // already been popped by the time this callback runs.
+                break;
+              case NavigateTarget.editProduct:
+                if (editProductId != null) _openEditProduct(editProductId);
             }
           },
         ),
@@ -49,6 +61,15 @@ class _StoreShellState extends ConsumerState<StoreShell> {
       showAppModal(context, child: const AddProductFlow());
   void _openHelp() => showAppModal(context, child: const HelpSupportScreen());
   void _openFaq() => showAppModal(context, child: const FaqScreen());
+
+  void _openEditProduct(String productId) {
+    for (final p in ref.read(productsProvider)) {
+      if (p.id == productId) {
+        showAppModal(context, child: EditProductScreen(product: p));
+        return;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,12 +80,14 @@ class _StoreShellState extends ConsumerState<StoreShell> {
       loading: () => true,
       error: (_, __) => true,
     );
+    final newOrdersCount = ref.watch(newOrdersCountProvider);
 
     return Scaffold(
       body: Column(
         children: [
           if (!isOnline)
             _OfflineBanner(
+              key: const Key('offline_banner'),
               label: tr('noInternet'),
               message: tr('noInternetMessage'),
             ),
@@ -91,17 +114,26 @@ class _StoreShellState extends ConsumerState<StoreShell> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
+                key: const Key('bottom_nav_profile_button'),
                 iconSize: 30,
                 onPressed: _openProfile,
                 icon: const Icon(Icons.person_outline,
                     color: AppColors.textMuted),
               ),
-              VoiceButton(size: 64, onTap: _openAssistant),
+              VoiceButton(
+                  key: const Key('bottom_nav_voice_button'),
+                  size: 64,
+                  onTap: _openAssistant),
               IconButton(
+                key: const Key('bottom_nav_orders_button'),
                 iconSize: 30,
                 onPressed: _openOrders,
-                icon: const Icon(Icons.receipt_long_outlined,
-                    color: AppColors.textMuted),
+                icon: Badge(
+                  isLabelVisible: newOrdersCount > 0,
+                  label: Text('$newOrdersCount'),
+                  child: const Icon(Icons.receipt_long_outlined,
+                      color: AppColors.textMuted),
+                ),
               ),
             ],
           ),
@@ -115,7 +147,7 @@ class _OfflineBanner extends StatelessWidget {
   final String label;
   final String message;
 
-  const _OfflineBanner({required this.label, required this.message});
+  const _OfflineBanner({super.key, required this.label, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -127,8 +159,7 @@ class _OfflineBanner extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              const Icon(Icons.wifi_off_rounded,
-                  color: Colors.white, size: 20),
+              const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

@@ -12,13 +12,40 @@ class PublishResult {
   final bool success;
   final String? message;
   final int? productId;
+
+  /// First image URL - kept for callers that only ever cared about one.
   final String? imageUrl;
+
+  /// Every image URL WooCommerce now has for this product, in order.
+  final List<String> imageUrls;
+
+  /// The public storefront URL WooCommerce assigned this product.
+  final String? permalink;
 
   const PublishResult({
     required this.success,
     this.message,
     this.productId,
     this.imageUrl,
+    this.imageUrls = const [],
+    this.permalink,
+  });
+}
+
+/// Aggregate price stats across all karigars' published listings in one
+/// WooCommerce category - used for smart-pricing suggestions and as an
+/// honest, in-marketplace substitute for cross-site competitor comparison.
+class CategoryPriceStats {
+  final int count;
+  final double min;
+  final double max;
+  final double avg;
+
+  const CategoryPriceStats({
+    required this.count,
+    required this.min,
+    required this.max,
+    required this.avg,
   });
 }
 
@@ -158,6 +185,48 @@ class WooCommerceService {
     }
   }
 
+  /// Resolves [name] to the ID of the matching term in the given WordPress
+  /// [taxonomy] (its REST base, e.g. `product_brand` or `product_cat`),
+  /// creating the term if none exists yet. The WooCommerce products endpoint
+  /// only accepts `brands`/`categories` by `id` — their `name` sub-field is
+  /// read-only, so posting `{'name': ...}` there is silently ignored. Returns
+  /// null (and logs) if lookup/creation fails, so callers can skip that
+  /// field rather than fail the whole publish/update.
+  Future<int?> _resolveTermId(String taxonomy, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    if (_wpUsername.isEmpty || _wpAppPassword.isEmpty) return null;
+
+    try {
+      final search = await _wpDio.get<List<dynamic>>(
+        '/$taxonomy',
+        queryParameters: {'search': trimmed, 'per_page': 100},
+        options: Options(headers: {'Authorization': _wpBasicAuthHeader}),
+      );
+      for (final entry in search.data ?? []) {
+        final term = entry as Map<String, dynamic>;
+        if ((term['name'] as String?)?.toLowerCase() == trimmed.toLowerCase()) {
+          return term['id'] as int?;
+        }
+      }
+
+      final created = await _wpDio.post(
+        '/$taxonomy',
+        data: {'name': trimmed},
+        options: Options(headers: {'Authorization': _wpBasicAuthHeader}),
+      );
+      return created.data['id'] as int?;
+    } catch (e, st) {
+      await _logger.logError(
+        'wc_resolve_term',
+        e,
+        stackTrace: st,
+        context: {'taxonomy': taxonomy, 'name': trimmed},
+      );
+      return null;
+    }
+  }
+
   String _friendlyWooError(DioException e) {
     final data = e.response?.data;
     if (data is Map && data['message'] is String) {
@@ -171,23 +240,92 @@ class WooCommerceService {
     return 'Could not publish product. Please try again.';
   }
 
+  /// Uploads each file (same path as publishProduct(): WordPress media
+  /// first, Firebase Storage as fallback) and returns one WooCommerce image
+  /// entry per file that succeeded. A single failed upload is skipped
+  /// (and logged) rather than aborting every other image in the batch.
+  Future<List<Map<String, Object?>>> _uploadImagesForEntries(
+      List<File> files) async {
+    final entries = <Map<String, Object?>>[];
+    for (final file in files) {
+      int? mediaId;
+      if (_wpUsername.isNotEmpty && _wpAppPassword.isNotEmpty) {
+        mediaId = await _uploadImageToWordPress(file);
+      }
+      String? storageUrl;
+      if (mediaId == null) {
+        storageUrl = await _backupToFirebaseStorage(file)
+            .timeout(const Duration(seconds: 15), onTimeout: () => null);
+      }
+      if (mediaId != null) {
+        entries.add({'id': mediaId});
+      } else if (storageUrl != null) {
+        entries.add({'src': storageUrl});
+      }
+    }
+    return entries;
+  }
+
   Future<PublishResult> updateProduct({
     required int wooId,
     required String title,
     required String description,
     required String price,
     required int quantity,
+    String category = '',
+    String storeName = '',
+    List<File>? newImageFiles,
+    List<String>? keepImageUrls,
   }) async {
     try {
-      await _dio.put('/products/$wooId', data: {
+      // null (both params) = don't touch images at all - existing callers
+      // that only update text/price keep this exact behavior. Passing
+      // either param (even as an empty list) means "here is the full
+      // desired image set" - kept existing images by URL plus newly picked
+      // files uploaded fresh. Note: kept images are re-sideloaded by URL
+      // (WooCommerce doesn't accept "keep this existing attachment by URL"
+      // without its media id, which this app doesn't track) - functionally
+      // correct but can leave old duplicate attachments in the WP media
+      // library over repeated edits.
+      List<Map<String, Object?>>? images;
+      if (newImageFiles != null || keepImageUrls != null) {
+        images = [
+          for (final url in keepImageUrls ?? const <String>[]) {'src': url},
+          ...await _uploadImagesForEntries(newImageFiles ?? const <File>[]),
+        ];
+      }
+
+      final categoryTermId = await _resolveTermId('product_cat', category);
+      final brandTermId = await _resolveTermId('product_brand', storeName);
+      final response = await _dio.put('/products/$wooId', data: {
         'name': title,
         'regular_price': price,
         'description': description,
         'stock_quantity': quantity,
         'manage_stock': true,
+        if (images != null) 'images': images,
+        if (categoryTermId != null)
+          'categories': [
+            {'id': categoryTermId},
+          ],
+        if (brandTermId != null)
+          'brands': [
+            {'id': brandTermId},
+          ],
       });
 
-      return const PublishResult(success: true);
+      final respImages = response.data['images'] as List?;
+      final imageUrls = (respImages ?? [])
+          .map((img) => (img as Map<String, dynamic>)['src'] as String?)
+          .whereType<String>()
+          .toList();
+
+      return PublishResult(
+        success: true,
+        imageUrl: imageUrls.isNotEmpty ? imageUrls.first : null,
+        imageUrls: imageUrls,
+        permalink: response.data['permalink'] as String?,
+      );
     } catch (e, st) {
       await _logger.logError(
         'wc_update_product',
@@ -202,6 +340,49 @@ class WooCommerceService {
             ? _friendlyWooError(e)
             : 'Could not update product. Please try again.',
       );
+    }
+  }
+
+  /// Sets or clears the WooCommerce-side archived state: [archived] marks the
+  /// product out of stock and hides it from catalog/search, [!archived]
+  /// reverses both. [quantity] is the stock count to restore when
+  /// un-archiving (ignored when archiving).
+  ///
+  /// All products here have `manage_stock` enabled, under which WooCommerce
+  /// always re-derives `stock_status` from `stock_quantity` on save and
+  /// ignores an explicit `stock_status` value sent alongside a non-zero/zero
+  /// quantity mismatch — so the quantity must be driven to 0 (archive) or
+  /// back to its original value (restore) in the same request for the
+  /// status to actually stick. `stock_status`/`catalog_visibility` are
+  /// otherwise standard WooCommerce product fields, so an admin can also
+  /// toggle them back manually from the WordPress product edit screen.
+  ///
+  /// `catalog_visibility: hidden` alone only delists a product from
+  /// catalog/search — its direct permalink still resolves and returns the
+  /// page (confirmed via live testing). `status: private` is what actually
+  /// blocks direct-URL access, so both must be set together for an archive
+  /// to fully take a product off the storefront.
+  Future<bool> setProductArchived({
+    required int wooId,
+    required bool archived,
+    int quantity = 0,
+  }) async {
+    try {
+      await _dio.put('/products/$wooId', data: {
+        'stock_quantity': archived ? 0 : quantity,
+        'stock_status': archived ? 'outofstock' : 'instock',
+        'catalog_visibility': archived ? 'hidden' : 'visible',
+        'status': archived ? 'private' : 'publish',
+      });
+      return true;
+    } catch (e, st) {
+      await _logger.logError(
+        'wc_set_product_archived',
+        e,
+        stackTrace: st,
+        context: {'wooId': wooId, 'archived': archived, 'quantity': quantity},
+      );
+      return false;
     }
   }
 
@@ -261,6 +442,72 @@ class WooCommerceService {
     }
   }
 
+  /// Aggregate price stats (count/min/max/avg) across every published
+  /// product in [category], across ALL karigars - used for smart-pricing
+  /// suggestions and in-marketplace comparison. Read-only: unlike
+  /// [_resolveTermId], this never creates a category term, since a mistyped
+  /// or one-off category name here shouldn't leave junk terms behind.
+  /// Returns null if the category doesn't exist yet or has no listings.
+  Future<CategoryPriceStats?> fetchCategoryPriceStats(String category) async {
+    final trimmed = category.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final termId = await _lookupTermId('product_cat', trimmed);
+      if (termId == null) return null;
+
+      final response = await _dio.get<List<dynamic>>(
+        '/products',
+        queryParameters: {
+          'category': termId,
+          'per_page': 50,
+          'status': 'publish',
+        },
+      );
+
+      final prices = (response.data ?? [])
+          .map((p) => double.tryParse(
+              (p as Map<String, dynamic>)['regular_price'] as String? ?? ''))
+          .whereType<double>()
+          .where((p) => p > 0)
+          .toList();
+      if (prices.isEmpty) return null;
+
+      final sum = prices.reduce((a, b) => a + b);
+      return CategoryPriceStats(
+        count: prices.length,
+        min: prices.reduce((a, b) => a < b ? a : b),
+        max: prices.reduce((a, b) => a > b ? a : b),
+        avg: sum / prices.length,
+      );
+    } catch (e, st) {
+      await _logger.logError('wc_fetch_category_price_stats', e,
+          stackTrace: st, context: {'category': trimmed});
+      return null;
+    }
+  }
+
+  /// Search-only variant of [_resolveTermId] - returns the matching term id
+  /// or null, never creates one.
+  Future<int?> _lookupTermId(String taxonomy, String name) async {
+    if (_wpUsername.isEmpty || _wpAppPassword.isEmpty) return null;
+    try {
+      final search = await _wpDio.get<List<dynamic>>(
+        '/$taxonomy',
+        queryParameters: {'search': name, 'per_page': 100},
+        options: Options(headers: {'Authorization': _wpBasicAuthHeader}),
+      );
+      for (final entry in search.data ?? []) {
+        final term = entry as Map<String, dynamic>;
+        if ((term['name'] as String?)?.toLowerCase() == name.toLowerCase()) {
+          return term['id'] as int?;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Updates karigar meta on every product in [wooIds] without touching any
   /// other metadata. WooCommerce REST API uses merge semantics for meta_data —
   /// only the keys included in the request are changed.
@@ -275,7 +522,8 @@ class WooCommerceService {
     if (wooIds.isEmpty) return true;
     final meta = <Map<String, String>>[
       {'key': '_ks_upi_id', 'value': upiId},
-      if (karigarUid.isNotEmpty) {'key': '_ks_karigar_uid', 'value': karigarUid},
+      if (karigarUid.isNotEmpty)
+        {'key': '_ks_karigar_uid', 'value': karigarUid},
     ];
     final results = await Future.wait(
       wooIds.map((id) async {
@@ -296,34 +544,98 @@ class WooCommerceService {
     return results.every((r) => r);
   }
 
+  /// Sets the storefront-visible image on this karigar's WooCommerce Brand
+  /// term (native WooCommerce Brands, `/wc/v3/products/brands`) - the same
+  /// term every one of their products is already tagged with via
+  /// [_resolveTermId]. [imageUrl] is sideloaded by WooCommerce as a new
+  /// media attachment (WooCommerce doesn't accept "use this existing
+  /// attachment by URL" without its media id, which this app doesn't track
+  /// for the profile photo). Returns false (logged) if the brand term
+  /// doesn't exist yet - e.g. the karigar hasn't published a product under
+  /// this store name yet, so there's no brand to attach an image to.
+  Future<bool> syncBrandImage({
+    required String storeName,
+    required String imageUrl,
+  }) async {
+    final termId = await _resolveTermId('product_brand', storeName);
+    if (termId == null) return false;
+    try {
+      await _dio.put('/products/brands/$termId', data: {
+        'image': {'src': imageUrl},
+      });
+      return true;
+    } catch (e, st) {
+      await _logger.logError(
+        'wc_sync_brand_image',
+        e,
+        stackTrace: st,
+        context: {'storeName': storeName, 'termId': termId},
+      );
+      return false;
+    }
+  }
+
+  /// Renames this karigar's WooCommerce Brand term in place (rather than
+  /// creating a new one) when they change their Store Name in the app -
+  /// [_resolveTermId] elsewhere only ever creates/reuses a term matching
+  /// whatever store name is passed in at that moment, so without this,
+  /// renaming in-app silently drifted from the storefront: every existing
+  /// product stayed tagged to the old-named term forever (products
+  /// reference a brand by ID, not by name, so renaming the term in place is
+  /// exactly what makes every product using it pick up the new name too,
+  /// with no need to re-save each product individually).
+  ///
+  /// Read-only lookup on [oldStoreName] (via [_lookupTermId], not
+  /// [_resolveTermId]) - if the karigar never published anything under the
+  /// old name, there's no term to rename, and that's fine: the next publish
+  /// under the new name will create a correctly-named term from scratch via
+  /// the normal [_resolveTermId] path. Returns false (logged) on failure.
+  Future<bool> renameBrand({
+    required String oldStoreName,
+    required String newStoreName,
+  }) async {
+    if (oldStoreName.trim() == newStoreName.trim()) return true;
+    final termId = await _lookupTermId('product_brand', oldStoreName);
+    if (termId == null) return false;
+    try {
+      await _dio.put('/products/brands/$termId', data: {
+        'name': newStoreName.trim(),
+      });
+      return true;
+    } catch (e, st) {
+      await _logger.logError(
+        'wc_rename_brand',
+        e,
+        stackTrace: st,
+        context: {
+          'oldStoreName': oldStoreName,
+          'newStoreName': newStoreName,
+          'termId': termId,
+        },
+      );
+      return false;
+    }
+  }
+
   Future<PublishResult> publishProduct({
     required String title,
     required String description,
     required String price,
-    required File imageFile,
+    required List<File> imageFiles,
     String karigarUid = '',
     String karigarName = '',
     String upiId = '',
     String language = '',
+    String category = '',
+    String storeName = '',
   }) async {
-    // Prefer WordPress media upload (gives a persistent mediaId).
-    // Falls back to Firebase Storage URL when WP credentials are absent or upload fails.
-    int? mediaId;
-    if (_wpUsername.isNotEmpty && _wpAppPassword.isNotEmpty) {
-      mediaId = await _uploadImageToWordPress(imageFile);
-    }
+    final imageEntries = await _uploadImagesForEntries(imageFiles);
 
-    String? storageUrl;
-    if (mediaId == null) {
-      storageUrl = await _backupToFirebaseStorage(imageFile)
-          .timeout(const Duration(seconds: 15), onTimeout: () => null);
-    }
-
-    if (mediaId == null && storageUrl == null) {
+    if (imageEntries.isEmpty) {
       await _logger.logError(
         'wc_publish_product',
-        'Aborting: both WP media upload and Firebase Storage backup failed',
-        context: {'title': title},
+        'Aborting: every image upload failed (WP media + Firebase Storage backup)',
+        context: {'title': title, 'imageCount': imageFiles.length},
       );
       return const PublishResult(
         success: false,
@@ -333,9 +645,8 @@ class WooCommerceService {
     }
 
     try {
-      // WooCommerce accepts either {id} (WP media library) or {src} (URL to sideload).
-      final imageEntry =
-          mediaId != null ? {'id': mediaId} : {'src': storageUrl};
+      final categoryTermId = await _resolveTermId('product_cat', category);
+      final brandTermId = await _resolveTermId('product_brand', storeName);
 
       final payload = {
         'name': title,
@@ -343,7 +654,15 @@ class WooCommerceService {
         'regular_price': price,
         'description': description,
         'status': 'publish',
-        'images': [imageEntry],
+        'images': imageEntries,
+        if (categoryTermId != null)
+          'categories': [
+            {'id': categoryTermId},
+          ],
+        if (brandTermId != null)
+          'brands': [
+            {'id': brandTermId},
+          ],
         'meta_data': [
           {'key': '_ks_karigar_uid', 'value': karigarUid},
           {'key': '_ks_karigar_name', 'value': karigarName},
@@ -355,21 +674,24 @@ class WooCommerceService {
       final response = await _dio.post('/products', data: payload);
 
       final images = response.data['images'] as List?;
-      final imageUrl = (images != null && images.isNotEmpty)
-          ? (images.first as Map<String, dynamic>)['src'] as String?
-          : null;
+      final imageUrls = (images ?? [])
+          .map((img) => (img as Map<String, dynamic>)['src'] as String?)
+          .whereType<String>()
+          .toList();
 
       return PublishResult(
         success: true,
         productId: response.data['id'] as int?,
-        imageUrl: imageUrl,
+        imageUrl: imageUrls.isNotEmpty ? imageUrls.first : null,
+        imageUrls: imageUrls,
+        permalink: response.data['permalink'] as String?,
       );
     } catch (e, st) {
       await _logger.logError(
         'wc_create_product',
         e,
         stackTrace: st,
-        context: {'title': title, 'mediaId': mediaId, 'storageUrl': storageUrl},
+        context: {'title': title, 'imageCount': imageFiles.length},
       );
 
       return PublishResult(
