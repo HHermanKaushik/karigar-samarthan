@@ -15,7 +15,7 @@ This project was developed as a third-year group Computer Science capstone proje
 1. Log in at [jstrust.in/karigar-samarthan/ks-my-account](https://jstrust.in/karigar-samarthan/ks-my-account/) with:
    - Email: `2023ebcs142@online.bits-pilani.ac.in`
    - Password: `Testuser@142`
-2. Click **"Karigar Camps"** in the site header, or go directly to [jstrust.in/volunteer-entry-for-karigar-camps-version-2](https://jstrust.in/volunteer-entry-for-karigar-camps-version-2/).
+2. Click **"Seller Signup"** in the site header, then click the **"Karigar Camps"** button in that page, or go directly to [jstrust.in/volunteer-entry-for-karigar-camps-version-2](https://jstrust.in/volunteer-entry-for-karigar-camps-version-2/).
 
 This tool is designed to work with zero internet connectivity after the page has loaded once — see [Karigar Camp Entry (offline volunteer tool)](#karigar-camp-entry-offline-volunteer-tool) below for how and why.
 
