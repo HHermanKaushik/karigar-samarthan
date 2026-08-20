@@ -8,21 +8,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../providers/user_provider.dart';
 import 'sync_logger.dart';
 
-/// Keeps a user's profile in sync across the three places it needs to
-/// exist:
-///
-///  1. Firestore (`users/{uid}`) — the app's own source of truth, used by
-///     the AI assistant and other screens to read account data.
-///  2. WooCommerce (`/wc/v3/customers`) — so orders placed against this
-///     artisan's store are linked to a real customer record.
-///
-/// NOTE on auth: this app does not yet have a real sign-in flow wired up
-/// (the login screen's OTP step is a stub). To give Firestore a stable,
-/// rule-friendly `uid` to write under, we fall back to Firebase Anonymous
-/// Auth if no user is signed in yet. When real Phone Auth is added, the
-/// anonymous account can be upgraded in place via
-/// `FirebaseAuth.instance.currentUser.linkWithCredential(...)`, which keeps
-/// the same `uid` — so no migration is needed for the data written here.
+/// Keeps a user's profile in sync in two places: Firestore (`users/{uid}`,
+/// the app's source of truth) and WooCommerce (`/wc/v3/customers`, so
+/// orders link to a real customer record).
 class UserSyncService {
   final SyncLogger _logger;
   late final Dio _dio;
@@ -49,14 +37,9 @@ class UserSyncService {
     );
   }
 
-  /// Syncs [profile] to Firestore and WooCommerce. Safe to call on every
-  /// profile save (signup, profile edits, etc.) — it's idempotent and
-  /// reuses the existing WooCommerce customer once one has been created.
-  ///
-  /// Never throws: all failures are recorded via [SyncLogger] so they show
-  /// up in Crashlytics + the `sync_errors` Firestore collection without
-  /// interrupting the user's flow. Returns `true` if the sync completed
-  /// successfully, `false` otherwise (e.g. offline, server error).
+  /// Syncs [profile] to Firestore and WooCommerce. Idempotent, safe to
+  /// call on every profile save. Never throws - failures go through
+  /// [SyncLogger]. Returns `true` on success.
   Future<bool> syncUserProfile(UserProfile profile) async {
     String uid;
     try {
@@ -76,10 +59,7 @@ class UserSyncService {
       final existing = await userDocRef.get();
       int? wooCustomerId = existing.data()?['wooCustomerId'] as int?;
 
-      // Create the WooCommerce customer once, but keep it updated on every
-      // subsequent save - previously this only ever ran on the very first
-      // sync (`??=`), so a Store Name (or name/phone) change in the app
-      // never reached the customer's WooCommerce record after that.
+      // Create the WooCommerce customer once, keep it updated on every save.
       if (wooCustomerId == null) {
         wooCustomerId = await _syncWooCustomer(profile, uid);
       } else {
@@ -123,13 +103,11 @@ class UserSyncService {
     return user.uid;
   }
 
-  /// Creates (or finds) a WooCommerce customer for this user and returns
-  /// its ID, or `null` if the sync failed.
+  /// Creates or finds a WooCommerce customer for this user, returns its
+  /// ID, or `null` on failure.
   Future<int?> _syncWooCustomer(UserProfile profile, String uid) async {
-    // WooCommerce customers require a unique email + username, but the
-    // current signup form only collects a phone number. Until a real
-    // email is collected, derive a stable placeholder identity from the
-    // phone number. Revisit once the signup form is finalized.
+    // WooCommerce needs a unique email + username; signup only collects a
+    // phone number, so derive a placeholder identity from it.
     final digits = profile.phone.replaceAll(RegExp(r'\D'), '');
     final username = 'ks_$digits';
     final email = '$username@users.karigarsamarthan.app';
@@ -143,9 +121,7 @@ class UserSyncService {
     final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
 
     try {
-      // Stay idempotent: if a customer with this email already exists
-      // (e.g. profile was synced before but the Firestore doc was missing
-      // the wooCustomerId), reuse it instead of creating a duplicate.
+      // Reuse an existing customer with this email instead of duplicating.
       final existingSearch = await _dio.get(
         'customers',
         queryParameters: {'email': email},
@@ -184,9 +160,8 @@ class UserSyncService {
     }
   }
 
-  /// Pushes name/phone/store-name changes onto an already-created
-  /// WooCommerce customer record - without this, everything but the very
-  /// first save was silently dropped (see the call site's comment).
+  /// Pushes name/phone/store-name changes to an existing WooCommerce
+  /// customer record.
   Future<void> _updateWooCustomer(
       int wooCustomerId, UserProfile profile) async {
     final nameParts = profile.fullName

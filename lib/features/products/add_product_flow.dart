@@ -618,12 +618,9 @@ class _AddProductFlowState extends ConsumerState<AddProductFlow> {
               Expanded(
                 child: ElevatedButton(
                   key: const Key('add_product_photo_next_button'),
-                  // A photo is mandatory here, not optional-then-nagged-about
-                  // later: every photo must pass through the AI moderation
-                  // check in _runAi(), which only ever runs once per flow.
-                  // Letting photos in at any later step (as a "Skip, add
-                  // later" option previously did) would let one slip in
-                  // completely unscreened.
+                  // Photo is mandatory here - moderation in _runAi() only
+                  // runs once per flow, so a later-added photo would skip
+                  // it entirely.
                   onPressed: () {
                     if (_imagePaths.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

@@ -1,9 +1,7 @@
 enum OrderStatus { placed, paid, shipped, delivered }
 
-/// One product line within an order. A WooCommerce order can contain several
-/// of these - functions/index.js writes them all to Firestore's `lineItems`
-/// array (previously only the first line item was kept, silently dropping
-/// the rest of a multi-item order).
+/// One product line within an order. functions/index.js writes all of an
+/// order's line items to Firestore's `lineItems` array.
 class OrderLineItem {
   final String title;
   final String? image;
@@ -21,9 +19,8 @@ class OrderLineItem {
 class CustomerOrder {
   final String id;
 
-  /// All product lines in this order. Always non-empty - for orders synced
-  /// before lineItems existed in Firestore, this is built from the legacy
-  /// single-product fields below instead.
+  /// All product lines in this order. Always non-empty - falls back to
+  /// the legacy single-product fields below for older synced orders.
   final List<OrderLineItem> lineItems;
 
   /// Legacy single-product fields, kept for orders synced before lineItems

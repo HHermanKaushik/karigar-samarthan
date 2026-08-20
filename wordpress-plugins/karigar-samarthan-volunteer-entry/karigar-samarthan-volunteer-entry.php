@@ -33,10 +33,9 @@ function ks_register_assets() {
         true
     );
 
-    // Lets volunteer-form.js reach admin-ajax.php to pull a fresh nonce
-    // right before submitting, instead of trusting whatever was baked
-    // into the page whenever it first loaded - see ks_refresh_nonce()
-    // below for why that matters for this specific tool.
+    // Lets volunteer-form.js pull a fresh nonce right before submit
+    // instead of trusting the one baked into the page - see
+    // ks_refresh_nonce() below.
     wp_localize_script('ks-volunteer-js', 'ksVolunteer', [
         'ajaxUrl' => admin_url('admin-ajax.php'),
     ]);
@@ -50,20 +49,13 @@ function ks_register_assets() {
 }
 
 /**
- * Issues fresh security tokens for both volunteer forms (product creation
- * and photo upload) on request. The token WordPress bakes into a form when
- * it first renders is only valid for a limited window (WordPress's default
- * is roughly half a day) or until used once - but this tool is meant to sit
- * open through a long field day in patchy connectivity, and the photo
- * upload step is explicitly designed to happen "later" per the form's own
- * copy. Both are exactly the conditions that make the baked-in token go
- * stale before it's actually used, which surfaces to the volunteer as
- * "The link you followed has expired." Fetching a live one at the moment
- * of submit sidesteps that regardless of how long the page has been open.
+ * Issues fresh tokens for both volunteer forms on request - the page's
+ * baked-in nonce (valid ~half a day or one use) goes stale on a tool
+ * meant to stay open through a long field day, surfacing as "The link
+ * you followed has expired."
  *
- * wp_ajax_ (not wp_ajax_nopriv_) means WordPress already returns a generic
- * failure to logged-out requests before this function ever runs; the
- * explicit checks below are a second, more specific layer on top of that.
+ * wp_ajax_ (not wp_ajax_nopriv_) already blocks logged-out requests
+ * before this runs; the checks below are a second, more specific layer.
  */
 add_action('wp_ajax_ks_refresh_nonce', 'ks_refresh_nonce');
 function ks_refresh_nonce() {

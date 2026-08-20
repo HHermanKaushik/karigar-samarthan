@@ -22,14 +22,10 @@ class OrderDetailsScreen extends ConsumerStatefulWidget {
 class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   bool _shipping = false;
 
-  // Draft persistence for the "Mark as Shipped" dialog's tracking/carrier
-  // fields, keyed per order. Real-world repro from testing: switching away
-  // mid-entry (e.g. to WhatsApp, to look up a courier name) and back lost
-  // whatever had been typed - most likely Android reclaiming the
-  // backgrounded app's process under memory pressure, which Flutter doesn't
-  // recover from by default since nothing here uses state restoration.
-  // Saving to disk on every keystroke and restoring on dialog-open survives
-  // that regardless of what actually killed the in-memory state.
+  // Draft persistence for the "Mark as Shipped" tracking/carrier fields,
+  // keyed per order - switching away mid-entry (e.g. to WhatsApp) and back
+  // was losing whatever had been typed, likely Android reclaiming the
+  // backgrounded process. Saved on every keystroke, restored on open.
   String get _draftTrackingKey => 'shipping_draft_tracking_${widget.order.id}';
   String get _draftCarrierKey => 'shipping_draft_carrier_${widget.order.id}';
 
@@ -116,8 +112,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             );
       }
 
-      // Update Firestore immediately so the orders list reflects the new status
-      // without waiting for a WooCommerce webhook.
+      // Update Firestore immediately, don't wait on the webhook.
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       if (uid.isNotEmpty) {
         final db = FirebaseFirestore.instanceFor(
@@ -225,9 +220,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.border),
             ),
-            // One row per line item - a multi-product order previously only
-            // ever showed its first item, silently hiding the rest of what
-            // the karigar needed to ship.
+            // One row per line item.
             child: Column(
               children: [
                 for (var i = 0; i < order.lineItems.length; i++) ...[

@@ -99,13 +99,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: phone,
-      // If Android auto-verifies, instantly sign in right here!
+      // Android auto-verify path - sign in directly.
       verificationCompleted: (PhoneAuthCredential credential) async {
         try {
-          // We can temporarily simulate the exact same sign-in processing logic
           await FirebaseAuth.instance.signInWithCredential(credential);
 
-          // Trigger the profile sync check
           final uid = FirebaseAuth.instance.currentUser!.uid;
           final db = FirebaseFirestore.instanceFor(
               app: Firebase.app(), databaseId: 'karigar');

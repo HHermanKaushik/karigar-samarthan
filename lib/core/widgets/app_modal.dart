@@ -16,16 +16,9 @@ Future<T?> showAppModal<T>(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(ctx).viewInsets.bottom,
       ),
-      // The Padding above already shifts the whole sheet up by the keyboard
-      // height. Without this, every screen opened through showAppModal
-      // (any Scaffold with resizeToAvoidBottomInset: true inside [child])
-      // sees the SAME viewInsets.bottom again and shrinks a second time -
-      // double-counting the keyboard. That corrupts how much room the
-      // screen thinks it has, which is what caused a hard layout overflow
-      // on one screen and, on plain scrollable forms, made the actively
-      // focused field scroll to the wrong spot (covered by the keyboard,
-      // so typed digits weren't visible). Stripping the bottom inset here
-      // means descendants only ever account for it once.
+      // The Padding above already shifts the sheet up by the keyboard
+      // height - without this, a resizeToAvoidBottomInset Scaffold inside
+      // [child] double-counts it and shrinks again.
       child: MediaQuery.removeViewInsets(
         context: ctx,
         removeBottom: true,

@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Karigar Samarthan — Brand Logo Shortcode
- * Description: Renders a responsive seller banner (profile photo, karigar name, shop name, and a category filter row scoped to that seller's own products) on WooCommerce Brand archive pages — automatically, plus a [ks_brand_logo] shortcode for manual placement if you'd rather control exactly where it sits. Also repoints the "Home" breadcrumb on Brand pages to the Karigar Samarthan shop page instead of the site root.
+ * Description: Renders a seller banner (photo, karigar name, shop name, category filter) on WooCommerce Brand archive pages, plus a [ks_brand_logo] shortcode for manual placement. Repoints the "Home" breadcrumb on Brand pages to the shop page.
  * Version: 1.3.0
  * Author: J.S. Trust
  */
@@ -11,12 +11,9 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * The karigar's own name, read from _ks_karigar_name product meta (stamped
- * on every product at publish time by the app - see
- * add_product_flow.dart._publish() -> WooCommerceService.publishProduct()).
- * There's no equivalent field on the Brand term itself, so this reads it
- * off any one product published under the brand. Returns '' if the brand
- * has no products yet (nothing to read it from) or the meta is missing.
+ * The karigar's own name, read from _ks_karigar_name product meta (no
+ * equivalent field exists on the Brand term itself). Returns '' if the
+ * brand has no products yet.
  */
 function ks_get_karigar_name($brand_term_id) {
     $product_ids = get_posts([
@@ -36,12 +33,9 @@ function ks_get_karigar_name($brand_term_id) {
 }
 
 /**
- * Every product category actually used by this seller's own products, not
- * the site's full category list - "links to all their Product's
- * categories" means scoped to them specifically. Loops each of the
- * seller's products rather than a single clever query, since per-seller
- * catalogs here are small (a handful to a few dozen items) and this keeps
- * the logic simple and obviously correct.
+ * Categories actually used by this seller's own products, not the site's
+ * full list. Loops the seller's products directly rather than one clever
+ * query - catalogs here are small enough that this stays simple.
  */
 function ks_get_brand_categories($brand_term_id) {
     $product_ids = get_posts([
@@ -120,25 +114,20 @@ function ks_brand_banner_html() {
     return ob_get_clean();
 }
 
-// Manual placement: drop [ks_brand_logo] into an Elementor Shortcode widget
-// (or anywhere shortcodes render) if you want to control the exact spot.
+// Manual placement: drop [ks_brand_logo] anywhere shortcodes render.
 add_shortcode('ks_brand_logo', 'ks_brand_banner_html');
 
-// Automatic placement: WooCommerce fires this hook near the top of every
-// archive page it renders - product categories, and Brand pages alike -
-// regardless of theme or page builder, as long as the page is still using
-// WooCommerce's own template structure. No template file to find or edit.
+// Automatic placement: fires near the top of every WooCommerce archive
+// page, regardless of theme or page builder. No template file to edit.
 add_action('woocommerce_before_shop_loop', 'ks_brand_banner_print', 5);
 function ks_brand_banner_print() {
     echo ks_brand_banner_html();
 }
 
 /**
- * Applies the "ks_cat" filter pill selection to the actual product query,
- * combining it with the brand restriction the archive page already applies
- * (AND, not replacing it) - so clicking a category pill narrows this
- * seller's products down to that category rather than showing the whole
- * site's products in that category.
+ * Applies the "ks_cat" filter pill to the product query, ANDed with the
+ * existing brand restriction so a category pill narrows this seller's
+ * products, not the whole site's.
  */
 add_action('pre_get_posts', 'ks_apply_brand_category_filter');
 function ks_apply_brand_category_filter($query) {
@@ -159,9 +148,8 @@ function ks_apply_brand_category_filter($query) {
     $query->set('tax_query', $tax_query);
 }
 
-// Banner styling. Enqueued only on Brand archive pages, so it never loads
-// site-wide. Sizes are set with clamp() so the photo and layout scale down
-// smoothly on narrow screens rather than needing separate breakpoints.
+// Banner styling, enqueued only on Brand archive pages. clamp() handles
+// scaling on narrow screens without separate breakpoints.
 add_action('wp_head', 'ks_brand_banner_styles');
 function ks_brand_banner_styles() {
     if (!is_tax('product_brand')) {
@@ -241,16 +229,12 @@ function ks_brand_banner_styles() {
 }
 
 /**
- * Repoints the breadcrumb trail's "Home" link on Brand archive pages to the
- * Karigar Samarthan shop page rather than the site root. Done in JS, not a
- * PHP filter, because the breadcrumb markup here could come from
- * WooCommerce core, Elementor, or a Yoast-style plugin depending on theme
- * setup - matching by rendered text inside anything breadcrumb-like is
- * reliable regardless of which of those actually generated it, whereas
- * guessing the one right internal filter hook could silently do nothing.
- * Scoped to elements whose class name contains "breadcrumb" and whose link
- * text is exactly "Home", so it can't accidentally rewrite an unrelated
- * link (e.g. the site logo) that happens to also point at the homepage.
+ * Repoints the breadcrumb's "Home" link on Brand pages to the shop page.
+ * Done in JS, not a PHP filter, since the breadcrumb markup could come
+ * from WooCommerce core, Elementor, or a Yoast-style plugin depending on
+ * theme - matching rendered text is reliable regardless of source. Scoped
+ * to "breadcrumb"-class elements with link text exactly "Home" so it
+ * can't touch an unrelated link (e.g. the site logo).
  */
 add_action('wp_footer', 'ks_fix_brand_breadcrumb_home_link');
 function ks_fix_brand_breadcrumb_home_link() {

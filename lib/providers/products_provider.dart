@@ -29,10 +29,8 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('users').doc(_uid).collection('products');
 
-  /// Newest-created first. Firestore's own document order is not
-  /// guaranteed, and older documents predate [Product.createdAt] entirely
-  /// (sorted last, oldest-first among themselves) - this is intentionally
-  /// resilient to both rather than trusting incoming list order.
+  /// Newest-created first. Firestore's document order isn't guaranteed,
+  /// and older documents predate [Product.createdAt] (sorted last).
   static List<Product> _newestFirst(List<Product> products) {
     final epoch = DateTime.fromMillisecondsSinceEpoch(0);
     return [...products]
@@ -51,8 +49,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
   void add(Product p) {
     state = [p, ...state];
     if (_isAuthenticated) {
-      // createdAt is set here, once, only on the write that creates the
-      // document - never re-included in the shared _toMap() used by
+      // createdAt is set once here, not in the shared _toMap() used by
       // update() too, or every edit would bump it back to "now".
       _col.doc(p.id).set({
         ..._toMap(p),
@@ -67,9 +64,7 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
         if (x.id == p.id) p else x
     ];
     if (_isAuthenticated) {
-      // merge: true - a plain set() would silently wipe the createdAt
-      // written by add() above, since it's deliberately absent from
-      // _toMap()'s fields.
+      // merge: true - a plain set() would wipe the createdAt from add() above.
       _col.doc(p.id).set(_toMap(p), SetOptions(merge: true));
     }
   }
@@ -81,9 +76,9 @@ class ProductsNotifier extends StateNotifier<List<Product>> {
     }
   }
 
-  /// Fetches archived products directly from Firestore. Not kept in [state]
-  /// since every other reader of [state] assumes archived products are
-  /// excluded (see [_loadFromFirestore] and [refresh]).
+  /// Fetches archived products directly from Firestore - not kept in
+  /// [state], since every other reader assumes archived products are
+  /// excluded.
   Future<List<Product>> fetchArchived() async {
     if (!_isAuthenticated) return [];
     try {

@@ -13,9 +13,7 @@ const wooConsumerKey = defineSecret("WOO_CONSUMER_KEY");
 const wooConsumerSecret = defineSecret("WOO_CONSUMER_SECRET");
 
 // Gates the admin-only endpoints below (backfillOrders, listFlaggedListings).
-// Previously a hardcoded string literal in this file - fine while this file
-// only ever lived locally/on Firebase, not once it's readable by anyone with
-// repo access. Set via `firebase functions:secrets:set KS_ADMIN_TOKEN`.
+// Set via `firebase functions:secrets:set KS_ADMIN_TOKEN`.
 const adminToken = defineSecret("KS_ADMIN_TOKEN");
 
 const STATUS_MAP = {
@@ -96,9 +94,7 @@ exports.wooOrderWebhook = functions.https.onRequest(async (req, res) => {
 
   const firstItem = (order.line_items || [])[0] || {};
 
-  // Keep every line item, not just the first - a multi-item order (e.g.
-  // several products in one cart) previously had all but its first product
-  // silently dropped, so karigars never saw what else they needed to ship.
+  // Keep every line item, not just the first.
   const lineItems = (order.line_items || []).map((item) => ({
     title: item.name || "Order",
     image: item.image?.src || null,
@@ -106,12 +102,9 @@ exports.wooOrderWebhook = functions.https.onRequest(async (req, res) => {
     price: parseFloat(item.total) || 0,
   }));
 
-  // The "Pay via UPI" gateway (ks_upi) puts orders on "on-hold" once the
-  // customer submits their self-reported UPI transaction ID at checkout —
-  // WooCommerce's on-hold status here means "payment claimed, awaiting the
-  // karigar's manual confirmation," not "no payment yet." STATUS_MAP alone
-  // would flatten that to the same "placed" state as a brand-new order,
-  // hiding the fact that a payment (with a UTR) was actually submitted.
+  // ks_upi orders go "on-hold" once the customer submits their UPI
+  // transaction ID - that means payment claimed, not "placed" like a
+  // brand-new order.
   const upiUtr = meta.find((m) => m.key === "_ks_upi_utr")?.value || "";
   const isUpiAwaitingConfirmation =
     order.status === "on-hold" && order.payment_method === "ks_upi" && !!upiUtr;

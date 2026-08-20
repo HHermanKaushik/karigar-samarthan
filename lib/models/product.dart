@@ -1,20 +1,15 @@
 class Product {
   final String id;
 
-  /// English text - always required, since this is what's published to the
-  /// WooCommerce storefront regardless of the karigar's app language.
+  /// English text - always required, published to the storefront
+  /// regardless of app language.
   final String title;
   final String category;
   final String description;
 
-  /// The karigar's own text in [localLanguageCode], captured alongside the
-  /// English translation at add/edit time. Screens showing a product to the
-  /// karigar (not the storefront) should prefer this over the English
-  /// fields whenever [localLanguageCode] matches the app's current
-  /// language - otherwise the karigar sees English regardless of what
-  /// language they wrote (and are currently viewing) the app in, which is
-  /// the product data never having been kept in their language at all, not
-  /// a missing translation to render.
+  /// The karigar's own text in [localLanguageCode]. Screens should prefer
+  /// this over the English fields when [localLanguageCode] matches the
+  /// current app language.
   final String localTitle;
   final String localCategory;
   final String localDescription;
@@ -29,31 +24,24 @@ class Product {
   /// Null for seed/local-only products that haven't been synced yet.
   final int? wooId;
 
-  /// The primary (first) image URL on WooCommerce - used as the thumbnail
-  /// fallback when the local file at imagePaths.first is gone. Always
-  /// wooImageUrls.first when wooImageUrls is non-empty; kept as its own
-  /// field since it's what most read sites (list thumbnails) actually need.
+  /// Primary (first) image URL on WooCommerce - thumbnail fallback when
+  /// the local file is gone. Always wooImageUrls.first when non-empty.
   final String? wooImageUrl;
 
-  /// Every image URL on WooCommerce, in order - a product can have more
-  /// than one. Empty for products published before this was tracked, or
-  /// products that only ever had wooImageUrl set.
+  /// Every image URL on WooCommerce, in order. Empty for products
+  /// published before this was tracked.
   final List<String> wooImageUrls;
 
-  /// Soft-deleted in the app. Archived products are hidden from the product
-  /// list but remain on WooCommerce so no store data is lost.
+  /// Soft-deleted in the app; stays on WooCommerce so no store data is lost.
   final bool archived;
 
-  /// The public storefront URL for this product, as returned by WooCommerce
-  /// at publish/update time. Null for products published before this was
-  /// tracked, or local-only products never synced to Woo.
+  /// Public storefront URL, as returned by WooCommerce at publish time.
+  /// Null for products published before this was tracked.
   final String? permalink;
 
-  /// When this product was first created (server timestamp, set once at
-  /// creation and never touched again - see products_provider.dart's add()/
-  /// update()). Null for products created before this was tracked. This is
-  /// the only reliable way to know which product is "newest" - list order
-  /// from Firestore is not guaranteed and must not be relied on for that.
+  /// Server timestamp, set once at creation - see products_provider.dart's
+  /// add()/update(). The only reliable way to know "newest"; Firestore
+  /// list order isn't guaranteed.
   final DateTime? createdAt;
 
   const Product({

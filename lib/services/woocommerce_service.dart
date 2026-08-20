@@ -33,8 +33,7 @@ class PublishResult {
 }
 
 /// Aggregate price stats across all karigars' published listings in one
-/// WooCommerce category - used for smart-pricing suggestions and as an
-/// honest, in-marketplace substitute for cross-site competitor comparison.
+/// WooCommerce category - used for smart-pricing suggestions.
 class CategoryPriceStats {
   final int count;
   final double min;
@@ -185,13 +184,11 @@ class WooCommerceService {
     }
   }
 
-  /// Resolves [name] to the ID of the matching term in the given WordPress
-  /// [taxonomy] (its REST base, e.g. `product_brand` or `product_cat`),
-  /// creating the term if none exists yet. The WooCommerce products endpoint
-  /// only accepts `brands`/`categories` by `id` — their `name` sub-field is
-  /// read-only, so posting `{'name': ...}` there is silently ignored. Returns
-  /// null (and logs) if lookup/creation fails, so callers can skip that
-  /// field rather than fail the whole publish/update.
+  /// Resolves [name] to a term ID in WordPress [taxonomy] (e.g.
+  /// `product_brand`/`product_cat`), creating it if needed - the products
+  /// endpoint only accepts brands/categories by ID. Returns null on
+  /// failure so callers can skip the field instead of failing the whole
+  /// publish.
   Future<int?> _resolveTermId(String taxonomy, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
@@ -240,10 +237,9 @@ class WooCommerceService {
     return 'Could not publish product. Please try again.';
   }
 
-  /// Uploads each file (same path as publishProduct(): WordPress media
-  /// first, Firebase Storage as fallback) and returns one WooCommerce image
-  /// entry per file that succeeded. A single failed upload is skipped
-  /// (and logged) rather than aborting every other image in the batch.
+  /// Uploads each file (WordPress media first, Firebase Storage fallback)
+  /// and returns one entry per success. A failed upload is skipped, not
+  /// fatal to the batch.
   Future<List<Map<String, Object?>>> _uploadImagesForEntries(
       List<File> files) async {
     final entries = <Map<String, Object?>>[];
@@ -278,15 +274,11 @@ class WooCommerceService {
     List<String>? keepImageUrls,
   }) async {
     try {
-      // null (both params) = don't touch images at all - existing callers
-      // that only update text/price keep this exact behavior. Passing
-      // either param (even as an empty list) means "here is the full
-      // desired image set" - kept existing images by URL plus newly picked
-      // files uploaded fresh. Note: kept images are re-sideloaded by URL
-      // (WooCommerce doesn't accept "keep this existing attachment by URL"
-      // without its media id, which this app doesn't track) - functionally
-      // correct but can leave old duplicate attachments in the WP media
-      // library over repeated edits.
+      // null (both params) = don't touch images. Either param present
+      // (even []) = here's the full desired image set: kept URLs +
+      // newly uploaded files. Kept images are re-sideloaded by URL since
+      // we don't track WP media IDs - can leave duplicate attachments in
+      // the WP media library over repeated edits.
       List<Map<String, Object?>>? images;
       if (newImageFiles != null || keepImageUrls != null) {
         images = [
@@ -343,25 +335,17 @@ class WooCommerceService {
     }
   }
 
-  /// Sets or clears the WooCommerce-side archived state: [archived] marks the
-  /// product out of stock and hides it from catalog/search, [!archived]
-  /// reverses both. [quantity] is the stock count to restore when
-  /// un-archiving (ignored when archiving).
+  /// Sets or clears the WooCommerce archived state: [archived] marks out
+  /// of stock and hides from catalog/search, [!archived] reverses both.
+  /// [quantity] restores the stock count on un-archive.
   ///
-  /// All products here have `manage_stock` enabled, under which WooCommerce
-  /// always re-derives `stock_status` from `stock_quantity` on save and
-  /// ignores an explicit `stock_status` value sent alongside a non-zero/zero
-  /// quantity mismatch — so the quantity must be driven to 0 (archive) or
-  /// back to its original value (restore) in the same request for the
-  /// status to actually stick. `stock_status`/`catalog_visibility` are
-  /// otherwise standard WooCommerce product fields, so an admin can also
-  /// toggle them back manually from the WordPress product edit screen.
+  /// `manage_stock` products re-derive `stock_status` from
+  /// `stock_quantity` on save, so quantity must be driven to 0/restored
+  /// in the same request for the status to stick.
   ///
-  /// `catalog_visibility: hidden` alone only delists a product from
-  /// catalog/search — its direct permalink still resolves and returns the
-  /// page (confirmed via live testing). `status: private` is what actually
-  /// blocks direct-URL access, so both must be set together for an archive
-  /// to fully take a product off the storefront.
+  /// `catalog_visibility: hidden` alone doesn't block the direct
+  /// permalink (confirmed live) - `status: private` does, so both are
+  /// set together.
   Future<bool> setProductArchived({
     required int wooId,
     required bool archived,
@@ -442,12 +426,9 @@ class WooCommerceService {
     }
   }
 
-  /// Aggregate price stats (count/min/max/avg) across every published
-  /// product in [category], across ALL karigars - used for smart-pricing
-  /// suggestions and in-marketplace comparison. Read-only: unlike
-  /// [_resolveTermId], this never creates a category term, since a mistyped
-  /// or one-off category name here shouldn't leave junk terms behind.
-  /// Returns null if the category doesn't exist yet or has no listings.
+  /// Price stats (count/min/max/avg) across every published product in
+  /// [category], across all karigars. Read-only, unlike [_resolveTermId] -
+  /// never creates a term. Null if the category doesn't exist or is empty.
   Future<CategoryPriceStats?> fetchCategoryPriceStats(String category) async {
     final trimmed = category.trim();
     if (trimmed.isEmpty) return null;
@@ -508,12 +489,10 @@ class WooCommerceService {
     }
   }
 
-  /// Updates karigar meta on every product in [wooIds] without touching any
-  /// other metadata. WooCommerce REST API uses merge semantics for meta_data —
-  /// only the keys included in the request are changed.
-  ///
-  /// Always writes _ks_upi_id. Writes _ks_karigar_uid when [karigarUid] is
-  /// provided, which is required for the Cloud Function order-attribution logic.
+  /// Updates karigar meta on every product in [wooIds] - meta_data uses
+  /// merge semantics, so other keys are untouched. Always writes
+  /// _ks_upi_id; writes _ks_karigar_uid when [karigarUid] is given
+  /// (needed for Cloud Function order attribution).
   Future<bool> syncUpiId({
     required List<int> wooIds,
     required String upiId,
@@ -544,15 +523,12 @@ class WooCommerceService {
     return results.every((r) => r);
   }
 
-  /// Sets the storefront-visible image on this karigar's WooCommerce Brand
-  /// term (native WooCommerce Brands, `/wc/v3/products/brands`) - the same
-  /// term every one of their products is already tagged with via
-  /// [_resolveTermId]. [imageUrl] is sideloaded by WooCommerce as a new
-  /// media attachment (WooCommerce doesn't accept "use this existing
-  /// attachment by URL" without its media id, which this app doesn't track
-  /// for the profile photo). Returns false (logged) if the brand term
-  /// doesn't exist yet - e.g. the karigar hasn't published a product under
-  /// this store name yet, so there's no brand to attach an image to.
+  /// Sets the storefront image on this karigar's WooCommerce Brand term
+  /// (`/wc/v3/products/brands`) - the term their products are already
+  /// tagged with via [_resolveTermId]. [imageUrl] is sideloaded as a new
+  /// attachment each time (no media ID tracked for the profile photo).
+  /// Returns false if the brand term doesn't exist yet (no product
+  /// published under this store name).
   Future<bool> syncBrandImage({
     required String storeName,
     required String imageUrl,
@@ -575,21 +551,12 @@ class WooCommerceService {
     }
   }
 
-  /// Renames this karigar's WooCommerce Brand term in place (rather than
-  /// creating a new one) when they change their Store Name in the app -
-  /// [_resolveTermId] elsewhere only ever creates/reuses a term matching
-  /// whatever store name is passed in at that moment, so without this,
-  /// renaming in-app silently drifted from the storefront: every existing
-  /// product stayed tagged to the old-named term forever (products
-  /// reference a brand by ID, not by name, so renaming the term in place is
-  /// exactly what makes every product using it pick up the new name too,
-  /// with no need to re-save each product individually).
-  ///
-  /// Read-only lookup on [oldStoreName] (via [_lookupTermId], not
-  /// [_resolveTermId]) - if the karigar never published anything under the
-  /// old name, there's no term to rename, and that's fine: the next publish
-  /// under the new name will create a correctly-named term from scratch via
-  /// the normal [_resolveTermId] path. Returns false (logged) on failure.
+  /// Renames this karigar's WooCommerce Brand term in place when they
+  /// change their Store Name - products reference a brand by ID, so
+  /// renaming the term updates every product using it without re-saving
+  /// each one. Read-only lookup on [oldStoreName] via [_lookupTermId]; if
+  /// no term exists yet, the next publish creates one normally. Returns
+  /// false on failure.
   Future<bool> renameBrand({
     required String oldStoreName,
     required String newStoreName,

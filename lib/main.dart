@@ -13,14 +13,9 @@ import 'firebase_options.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Android 15+ (SDK 35+) draws edge-to-edge by default and deprecates the
-  // old solid-color status/navigation bar APIs. Without this, the app falls
-  // back to a plain opaque black system navigation bar that clashes with
-  // the app's cream theme instead of properly extending app content behind
-  // transparent system bars (confirmed visually on a real SDK 36 device -
-  // this is also what Play Console's pre-launch report flags). Every screen
-  // that needs to avoid the status/navigation bar already uses SafeArea,
-  // which reads the insets this exposes.
+  // Android 15+ draws edge-to-edge by default; without this the nav bar
+  // renders as plain opaque black instead of matching the app theme.
+  // Screens handle the insets via SafeArea.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -41,8 +36,8 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Ensure a Firebase user exists so Storage/Firestore writes are authenticated.
-  // Requires Anonymous sign-in enabled in Firebase Console → Authentication → Sign-in methods.
+  // Ensures a Firebase user exists so Storage/Firestore writes are authenticated.
+  // Requires Anonymous sign-in enabled in Firebase Console.
   if (FirebaseAuth.instance.currentUser == null) {
     try {
       await FirebaseAuth.instance.signInAnonymously();
@@ -50,12 +45,6 @@ Future<void> main() async {
       debugPrint('Anonymous sign-in failed (check Firebase Console): $e');
     }
   }
-
-  // Temporary diagnostic — remove after confirming env loads correctly
-  debugPrint(
-      'ENV CHECK: WP_USERNAME="${dotenv.env['WP_USERNAME']}" WP_APP_PASSWORD is ${(dotenv.env['WP_APP_PASSWORD'] ?? '').isEmpty ? 'EMPTY' : 'SET (${dotenv.env['WP_APP_PASSWORD']!.length} chars)'} WOOCOMMERCE_BASE_URL="${dotenv.env['WOOCOMMERCE_BASE_URL']}"');
-
-  print('Firebase connected successfully');
 
   runApp(
     const ProviderScope(

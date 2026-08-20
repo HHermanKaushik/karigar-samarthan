@@ -41,14 +41,8 @@ function ks_handle_photo_upload() {
 
     $attachment_ids = [];
 
-    // Read the multi-file upload into a plain local copy first. The loop
-    // below used to overwrite the entire $_FILES superglobal on every
-    // iteration (`$_FILES = ['upload_file' => $file]`), which worked for
-    // the first photo but destroyed $_FILES['ks_photos'] for every photo
-    // after it - each subsequent iteration then read from a superglobal
-    // that no longer had the data it needed, silently failing. Iterating
-    // over this local copy instead means nothing the loop does to $_FILES
-    // can affect what the next iteration reads.
+    // Iterate a local copy - reassigning $_FILES itself mid-loop breaks
+    // every photo after the first.
     $uploaded_files = $_FILES['ks_photos'];
 
     foreach ($uploaded_files['name'] as $key => $value) {
@@ -57,8 +51,7 @@ function ks_handle_photo_upload() {
             continue;
         }
 
-        // A unique key per file, added to (not replacing) $_FILES, so
-        // concurrent/subsequent iterations are unaffected.
+        // Unique key per file, added not replaced.
         $file_key = 'ks_upload_' . $key;
 
         $_FILES[$file_key] = [

@@ -6,11 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/sarvam_service.dart';
 
-/// Speaks text aloud, preferring Sarvam AI's TTS (natural Indian-language
-/// pronunciation, fixed voice "kavya") and transparently falling back to the
-/// device's native TTS engine if Sarvam is unreachable or errors - callers
-/// never need to know which one actually spoke. Every existing caller
-/// (AI assistant, FAQ "Listen" button) keeps working unchanged.
+/// Speaks text aloud, preferring Sarvam TTS (voice "kavya") and falling
+/// back to the device's native TTS if Sarvam errors - callers don't need
+/// to know which one spoke.
 class TTSService {
   static final FlutterTts _tts = FlutterTts();
   static final AudioPlayer _sarvamPlayer = AudioPlayer();
@@ -24,9 +22,8 @@ class TTSService {
   static const double fastSpeechRate = 0.6;
   static const _speedKey = 'tts_speech_rate';
 
-  /// Persisted per-device (this app is single-account-per-device, so this
-  /// is effectively per-user) - a karigar who finds the AI assistant's
-  /// voice too fast can slow it down once and have it stick.
+  /// Persisted per-device - lets a karigar slow down the voice once and
+  /// have it stick.
   static Future<double> getSpeechRate() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getDouble(_speedKey) ?? defaultSpeechRate;
@@ -37,9 +34,8 @@ class TTSService {
     await prefs.setDouble(_speedKey, rate);
   }
 
-  /// Maps the app's slow/normal/fast preset to Sarvam's `pace` parameter
-  /// (0.5-2.0) - a separate scale from flutter_tts's own speech-rate units,
-  /// so this can't just reuse the stored value directly.
+  /// Maps slow/normal/fast to Sarvam's `pace` param (0.5-2.0) - a
+  /// different scale from flutter_tts's own rate units.
   static double _sarvamPace(double flutterRate) {
     if (flutterRate <= slowSpeechRate) return 0.75;
     if (flutterRate >= fastSpeechRate) return 1.3;
@@ -56,11 +52,9 @@ class TTSService {
 
     if (await _speakViaSarvam(text, languageCode, rate, onComplete)) return;
 
-    // Fallback: Sarvam unavailable or failed - use the device's native TTS.
+    // Sarvam unavailable - fall back to native TTS.
     _tts.setCompletionHandler(onComplete ?? () {});
-    // Without this, speak()'s Future resolves once playback starts, not once
-    // it finishes - callers awaiting speak() (e.g. before navigating) would
-    // proceed while the utterance is still playing.
+    // Otherwise speak()'s Future resolves on playback start, not finish.
     await _tts.awaitSpeakCompletion(true);
     await _tts.setLanguage(languageCode);
     await _tts.setSpeechRate(rate);
@@ -68,8 +62,8 @@ class TTSService {
     await _tts.speak(text);
   }
 
-  /// Returns true if Sarvam successfully spoke the text (and [onComplete]
-  /// has already been called) - false means the caller should fall back.
+  /// True if Sarvam spoke the text ([onComplete] already called) - false
+  /// means fall back.
   static Future<bool> _speakViaSarvam(
     String text,
     String languageCode,

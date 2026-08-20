@@ -52,15 +52,10 @@ class _State extends ConsumerState<AiAssistantScreen> {
     TTSService.getSpeechRate().then((rate) {
       if (mounted) setState(() => _speechRate = rate);
     });
-    // Chat transcript and Gemini session both live in providers (see
-    // chat_provider.dart), not in this State, so they survive this screen
-    // being popped and reopened - e.g. when the assistant navigates the
-    // karigar to Orders/Profile and they come back to the chat. Only seed
-    // the greeting the very first time the app-wide transcript is empty.
-    // Deferred to after this build via addPostFrameCallback: modifying a
-    // provider's state synchronously inside initState (during the widget
-    // tree's build phase) throws - Riverpod requires state changes to
-    // happen outside build/initState/dispose/etc.
+    // Chat transcript/session live in providers (chat_provider.dart), not
+    // this State, so they survive this screen popping and reopening. Only
+    // seed the greeting when the app-wide transcript is empty. Deferred
+    // via addPostFrameCallback - a provider write inside initState throws.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (ref.read(chatMessagesProvider).isEmpty) {
@@ -70,9 +65,8 @@ class _State extends ConsumerState<AiAssistantScreen> {
             .add(ChatMessage(tr('aiGreeting'), true));
       }
     });
-    // Microphone permission is requested on-demand in _toggleVoice() instead
-    // of here, so opening this screen to type a text message never triggers
-    // a permission prompt for users who don't intend to use voice input.
+    // Mic permission is requested on-demand in _toggleVoice(), not here,
+    // so typing a text message never triggers a permission prompt.
   }
 
   @override
@@ -84,14 +78,10 @@ class _State extends ConsumerState<AiAssistantScreen> {
     super.dispose();
   }
 
-  // Session is created lazily on first send so Firestore-backed providers
-  // (products, orders) have time to finish loading. Cached in
-  // chatSessionProvider (not local State) so it survives this screen being
-  // popped and reopened, same reasoning as the transcript above - but the
-  // cached session's system prompt hardcodes "reply ONLY in <language>", so
-  // it must be rebuilt (not reused) if the karigar changed the app's
-  // language since it was created, or every future reply would keep coming
-  // back in the old language regardless of what they asked for.
+  // Created lazily on first send so Firestore-backed providers have time
+  // to load. Cached in chatSessionProvider, not local State, but rebuilt
+  // if the app language changed since creation - the system prompt
+  // hardcodes the reply language.
   AgentSession _getSession() {
     final lang = ref.read(languageProvider);
     final existing = ref.read(chatSessionProvider);
@@ -100,14 +90,9 @@ class _State extends ConsumerState<AiAssistantScreen> {
     }
     final ai = ref.read(aiAssistantServiceProvider);
     final woo = ref.read(wooServiceProvider);
-    // Use the app-wide ProviderContainer, not this screen's own `ref`, for
-    // the getters below: the session (and these closures) are cached in
-    // chatSessionProvider specifically to outlive this screen being closed
-    // and reopened. `ref.read` tied to this State would start throwing the
-    // moment this screen is disposed - exactly why every tool call ("show my
-    // orders", "link for my product") started failing while plain chat kept
-    // working fine, once the karigar had closed and reopened the assistant
-    // even once. The container itself lives for the whole app.
+    // App-wide ProviderContainer, not this screen's own `ref` - the
+    // session outlives this screen, and a screen-scoped `ref` would throw
+    // once this screen is disposed.
     final container = ProviderScope.containerOf(context, listen: false);
     final session = ai.createSession(
       accountContext: _buildAccountContext(),
@@ -207,7 +192,7 @@ $orderLines
       final editProductId = response.editProductId;
       final callback = widget.onNavigateTo!;
       Navigator.of(context).pop();
-      // Let the pop animation finish before opening the next modal.
+      // Let the pop animation finish first.
       WidgetsBinding.instance.addPostFrameCallback(
           (_) => callback(target, editProductId: editProductId));
     }
@@ -413,12 +398,8 @@ $orderLines
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Send takes the trailing slot (where users instinctively
-                  // reach) whenever there's typed text; mic only occupies it
-                  // when the field is empty. Previously the mic button sat
-                  // here unconditionally, so a typed query got mistakenly
-                  // tapped-as-send-via-mic, which both failed to send it and
-                  // wiped it via _send()'s clear-on-submit.
+                  // Send takes the trailing slot whenever there's typed
+                  // text; mic only shows when the field is empty.
                   ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _input,
                     builder: (_, value, __) {

@@ -203,8 +203,8 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () async {
-              // Sign out the phone-auth user, then re-auth anonymously for
-              // Storage/Firestore writes before the next phone login.
+              // Re-auth anonymously so Storage/Firestore writes still work
+              // before the next phone login.
               await FirebaseAuth.instance.signOut();
               try {
                 await FirebaseAuth.instance.signInAnonymously();
@@ -297,10 +297,8 @@ class ProfileScreen extends ConsumerWidget {
       final updated = user.copyWith(photoUrl: url);
       await ref.read(userProvider.notifier).save(updated);
 
-      // Also show this photo on the karigar's WooCommerce Brand listing -
-      // the same brand term every one of their products is already tagged
-      // with (see WooCommerceService._resolveTermId). Best-effort/background:
-      // a failure here shouldn't block the profile photo from being saved.
+      // Also sync to the WooCommerce Brand listing - best-effort,
+      // shouldn't block the profile photo save.
       unawaited(ref.read(wooServiceProvider).syncBrandImage(
             storeName: updated.storeName,
             imageUrl: url,
@@ -507,8 +505,7 @@ class _UpiEditSheetState extends ConsumerState<_UpiEditSheet> {
     );
     await ref.read(userProvider.notifier).saveLocal(updated);
 
-    // Sync new UPI ID to all existing WooCommerce products in the background.
-    // WooCommerce meta_data PUT uses merge semantics — only _ks_upi_id changes.
+    // Sync the new UPI ID to all existing products in the background.
     final wooIds = ref
         .read(productsProvider)
         .where((p) => p.wooId != null)
@@ -647,12 +644,8 @@ class _StoreNameEditSheetState extends ConsumerState<_StoreNameEditSheet> {
     final updated = widget.user.copyWith(storeName: storeName);
     await ref.read(userProvider.notifier).saveLocal(updated);
 
-    // Rename the karigar's existing WooCommerce Brand term in place rather
-    // than leaving it stale - every already-published product references
-    // this term by ID, so renaming it (not creating a new one) is what
-    // makes the storefront and every earlier product pick up the new store
-    // name too, with no need to re-save each product. Background/best-effort:
-    // shouldn't block closing this sheet.
+    // Rename the Brand term in place so every existing product picks up
+    // the new name too. Background/best-effort, shouldn't block closing.
     unawaited(ref.read(wooServiceProvider).renameBrand(
           oldStoreName: oldStoreName,
           newStoreName: storeName,

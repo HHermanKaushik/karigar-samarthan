@@ -1,15 +1,10 @@
 rules_version = '2';
 
-// Suggested starting rules for the collections introduced by the
-// UserSyncService / SyncLogger backend-sync fixes.
-//
 // Deploy with: firebase deploy --only firestore:rules
-// (adjust paths in firebase.json if you haven't set up firestore yet)
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // users/{uid} — one profile doc per Firebase Auth user.
-    // Only the owning user can read/write their own doc and subcollections.
+    // One profile doc per Firebase Auth user; owner-only access.
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 
@@ -22,19 +17,14 @@ service cloud.firestore {
       }
     }
 
-    // sync_errors — write-only diagnostic log from the app (SyncLogger).
-    // Clients can create entries but never read or modify existing ones;
-    // only trusted backends/admin SDK (which bypass these rules) should
-    // read this collection for triage.
+    // Write-only diagnostic log (SyncLogger) - clients create, never read.
     match /sync_errors/{docId} {
       allow create: if request.auth != null;
       allow read, update, delete: if false;
     }
 
-    // flagged_listings — write-only moderation audit log from the app
-    // (add_product_flow._logFlaggedListing), same access shape as
-    // sync_errors above. Reviewed via the listFlaggedListings Cloud
-    // Function, which uses the Admin SDK and bypasses these rules.
+    // Write-only moderation audit log, same shape as sync_errors.
+    // Reviewed via the listFlaggedListings Cloud Function (Admin SDK).
     match /flagged_listings/{docId} {
       allow create: if request.auth != null;
       allow read, update, delete: if false;

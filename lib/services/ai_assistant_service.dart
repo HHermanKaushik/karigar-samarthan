@@ -8,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../core/utils/product_matching.dart' show matchProduct;
 import '../models/order.dart';
 import '../models/product.dart';
 import 'woocommerce_service.dart';
@@ -295,22 +296,17 @@ const _toolsJson = [
 
 // ─── Agent session ───────────────────────────────────────────────────────────
 
-/// A stateful chat session backed by direct Gemini REST calls (no SDK).
-/// Using REST avoids crashes caused by the SDK's strict enum parsing when
-/// the live API returns new safety-category values the SDK doesn't know yet.
+/// Stateful chat session backed by direct Gemini REST calls (no SDK - its
+/// strict enum parsing crashes on safety-category values it doesn't know).
 class AgentSession {
   final Dio _dio;
   final String _url;
   final String _systemPrompt;
   final WooCommerceService _woo;
 
-  // Getters, not snapshots: a session is cached and reused across the whole
-  // time the assistant is open (see chatSessionProvider), which could be
-  // many minutes and many product/order edits. Calling these fresh on every
-  // tool execution instead of capturing List<Product>/List<CustomerOrder>
-  // once at session creation is what makes the agent's answers ("my newest
-  // product", "my new orders") reflect what's actually true right now,
-  // rather than whatever was true the moment the chat was first opened.
+  // Getters, not snapshots - session outlives a single product/order list
+  // (see chatSessionProvider), so these need to read current state on
+  // every tool call rather than whatever was true when the chat opened.
   final List<Product> Function() _getProducts;
   final List<CustomerOrder> Function() _getOrders;
 
@@ -470,8 +466,8 @@ class AgentSession {
               carrier: carrier,
             );
           }
-          // Mirror the status change into Firestore so the real-time orders
-          // stream updates the UI without waiting for a WooCommerce webhook.
+          // Mirror into Firestore so the orders stream updates without
+          // waiting on the webhook.
           if (success) {
             final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
             if (uid.isNotEmpty) {
@@ -612,34 +608,11 @@ class AgentSession {
     }
   }
 
-  /// Resolves a spoken/typed product name or category against the seller's
-  /// products — substring match on title first (case-insensitive), then on
-  /// category if no title matched (so "how's my pottery pricing" can find a
-  /// product even when no title contains the word "pottery" — previously
-  /// this only checked titles, so a category-phrased request silently fell
-  /// through to the fallback below instead of actually switching category).
-  /// Falls back to the most recently *created* product — by [Product.
-  /// createdAt], never by incoming list order/position, since Firestore's
-  /// own order isn't guaranteed — when the query is empty or matches
-  /// nothing. Shared by every tool that needs to identify "the product the
-  /// user means".
+  /// Resolves a spoken/typed product name or category - see matchProduct()
+  /// in core/utils/product_matching.dart. Shared by every tool that needs
+  /// to identify "the product the user means".
   Product? _matchProduct(String query) {
-    final trimmed = query.trim().toLowerCase();
-    final products = _getProducts();
-    if (products.isEmpty) return null;
-
-    if (trimmed.isNotEmpty) {
-      for (final p in products) {
-        if (p.title.toLowerCase().contains(trimmed)) return p;
-      }
-      for (final p in products) {
-        if (p.category.toLowerCase().contains(trimmed)) return p;
-      }
-    }
-
-    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
-    return products.reduce(
-        (a, b) => (a.createdAt ?? epoch).isAfter(b.createdAt ?? epoch) ? a : b);
+    return matchProduct(query, _getProducts());
   }
 }
 
@@ -651,10 +624,9 @@ class AiProductSuggestion {
   final String description;
   final List<String> tags;
 
-  /// True when the AI's vision check found the photo(s) depict something
-  /// clearly illegal to sell (weapons/ammunition, drugs, protected wildlife
-  /// products, etc.) — see analyzeProduct(). When true, [flagReason] explains
-  /// why, and the caller must not proceed to publish.
+  /// True when the vision check flagged the photo(s) as illegal to sell -
+  /// see analyzeProduct(). [flagReason] explains why; caller must not
+  /// publish when this is true.
   final bool flagged;
   final String flagReason;
 
@@ -669,15 +641,10 @@ class AiProductSuggestion {
 }
 
 abstract class AiAssistantService {
-  /// Creates a new stateful chat session for one assistant screen open.
-  /// [accountContext] is plain-text info about the user's products and orders,
-  /// captured once at session creation (fine for a text summary the model
-  /// just reads). [getProducts]/[getOrders] are called fresh on every tool
-  /// execution instead - the session can stay alive and cached (see
-  /// chatSessionProvider) far longer than any single product/order list
-  /// snapshot stays accurate, so open_edit_product/suggest_price/
-  /// get_product_link/list_orders/get_order_details must always re-read
-  /// current state rather than close over a stale list.
+  /// Creates a chat session for one assistant screen open. [accountContext]
+  /// is a static text summary captured once; [getProducts]/[getOrders] are
+  /// called fresh per tool call since the session outlives any one snapshot
+  /// (see chatSessionProvider).
   AgentSession createSession({
     required String accountContext,
     required String languageCode,
@@ -828,7 +795,7 @@ JSON FORMAT:
 Artisan's spoken description: $voiceTranscript
 ''';
 
-      // Build parts: images first (gives the model visual context), then the prompt.
+      // Images first, then the prompt text.
       final parts = <Map<String, dynamic>>[];
 
       for (final path in imagePaths) {
@@ -854,12 +821,9 @@ Artisan's spoken description: $voiceTranscript
           'contents': [
             {'parts': parts}
           ],
-          // This is a single-pass image -> JSON extraction, not a task that
-          // benefits from multi-step reasoning. Without this, gemini-2.5-flash
-          // still spends hundreds of tokens "thinking" by default, which adds
-          // real latency and makes the call more likely to get caught by
-          // Google's demand-based throttling. thinkingBudget: 0 fully disables
-          // it for -flash (unlike -pro, which has a nonzero minimum).
+          // Single-pass extraction, no multi-step reasoning needed -
+          // thinkingBudget: 0 skips flash's default "thinking" pass,
+          // cuts latency and throttling risk.
           'generationConfig': {
             'thinkingConfig': {'thinkingBudget': 0},
           },
@@ -895,13 +859,10 @@ Artisan's spoken description: $voiceTranscript
       );
     } catch (e) {
       debugPrint('analyzeProduct error: $e');
-      // Rethrow rather than returning a placeholder suggestion: a
-      // placeholder here previously defaulted `flagged` to false, which
-      // silently published banned-item photos unscreened whenever the
-      // vision call failed (network error, model outage, bad JSON, etc).
-      // The caller (add_product_flow._runAi) already handles this by
-      // reverting to the photo step and letting the artisan retry, which
-      // is safe; a fabricated "safe" result is not.
+      // Rethrow instead of returning a placeholder - defaulting flagged to
+      // false here would publish unscreened photos on any API failure.
+      // Caller (add_product_flow._runAi) reverts to the photo step so the
+      // artisan can retry.
       rethrow;
     }
   }

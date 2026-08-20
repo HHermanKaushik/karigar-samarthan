@@ -2,15 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Friendly, full-screen "no internet" state.
-///
-/// Designed for tech-illiterate users: a clear icon, short plain-language
-/// message, and a single big "Try Again" button. Pass translated strings
-/// from the caller via [title], [message], and [retryLabel].
-///
-/// For transient failures (e.g. a background sync that failed but the
-/// screen still has local data to show), prefer [showNetworkErrorSnackBar]
-/// instead of replacing the whole screen.
+/// Full-screen "no internet" state - icon, plain-language message, one big
+/// "Try Again" button. Pass translated strings via [title], [message],
+/// [retryLabel]. For transient failures where the screen still has local
+/// data, use [showNetworkErrorSnackBar] instead.
 class NetworkErrorView extends StatelessWidget {
   final String? title;
   final String? message;

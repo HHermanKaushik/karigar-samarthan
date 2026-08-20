@@ -168,7 +168,7 @@ class _LanguageCard extends StatelessWidget {
                 ),
               ),
 
-              // 🔊 SPEAKER BUTTON (NEW)
+              // SPEAKER BUTTON
               IconButton(
                 icon: Icon(
                   Icons.volume_up_outlined,

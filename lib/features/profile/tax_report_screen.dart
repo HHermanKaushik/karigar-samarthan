@@ -6,57 +6,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/financial_year.dart';
 import '../../models/order.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/translations_provider.dart';
 import '../../providers/user_provider.dart';
 
 enum _ReportPeriod { quarter, year }
-
-/// One Indian Financial Year period (Apr 1 - Mar 31), or one quarter within
-/// it (Q1 Apr-Jun ... Q4 Jan-Mar) - GST returns and income tax filing in
-/// India both run on the FY calendar, not the Jan-Dec one, so that's what
-/// "quarter"/"year" mean here rather than calendar quarters.
-class _FyRange {
-  final DateTime start;
-  final DateTime endExclusive;
-  final String label;
-  const _FyRange(
-      {required this.start, required this.endExclusive, required this.label});
-}
-
-_FyRange _currentFyQuarter(DateTime now) {
-  final fyStartYear = now.month >= 4 ? now.year : now.year - 1;
-  final monthsIntoFy = (now.month - 4) % 12;
-  final quarterIndex = monthsIntoFy ~/ 3; // 0..3
-  var startMonth = 4 + quarterIndex * 3;
-  var startYear = fyStartYear;
-  if (startMonth > 12) {
-    startMonth -= 12;
-    startYear += 1;
-  }
-  final start = DateTime(startYear, startMonth, 1);
-  var endMonth = startMonth + 3;
-  var endYear = startYear;
-  if (endMonth > 12) {
-    endMonth -= 12;
-    endYear += 1;
-  }
-  final end = DateTime(endYear, endMonth, 1);
-  final fyTag =
-      '${fyStartYear.toString().substring(2)}-${(fyStartYear + 1).toString().substring(2)}';
-  return _FyRange(
-      start: start, endExclusive: end, label: 'Q${quarterIndex + 1} FY$fyTag');
-}
-
-_FyRange _currentFyYear(DateTime now) {
-  final fyStartYear = now.month >= 4 ? now.year : now.year - 1;
-  final start = DateTime(fyStartYear, 4, 1);
-  final end = DateTime(fyStartYear + 1, 4, 1);
-  final fyTag =
-      '${fyStartYear.toString().substring(2)}-${(fyStartYear + 1).toString().substring(2)}';
-  return _FyRange(start: start, endExclusive: end, label: 'FY$fyTag');
-}
 
 class TaxReportScreen extends ConsumerStatefulWidget {
   const TaxReportScreen({super.key});
@@ -69,22 +25,17 @@ class _TaxReportScreenState extends ConsumerState<TaxReportScreen> {
   _ReportPeriod _period = _ReportPeriod.quarter;
   bool _generating = false;
 
-  _FyRange get _range {
+  FyRange get _range {
     final now = DateTime.now();
     return _period == _ReportPeriod.quarter
-        ? _currentFyQuarter(now)
-        : _currentFyYear(now);
+        ? currentFyQuarter(now)
+        : currentFyYear(now);
   }
-
-  List<CustomerOrder> _ordersInRange(List<CustomerOrder> all, _FyRange r) => all
-      .where((o) =>
-          !o.placedAt.isBefore(r.start) && o.placedAt.isBefore(r.endExclusive))
-      .toList();
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  String _buildReportText(_FyRange r, List<CustomerOrder> orders) {
+  String _buildReportText(FyRange r, List<CustomerOrder> orders) {
     final user = ref.read(userProvider);
     final total = orders.fold<double>(0, (sum, o) => sum + o.total);
     final buffer = StringBuffer();
@@ -122,7 +73,7 @@ class _TaxReportScreenState extends ConsumerState<TaxReportScreen> {
     return buffer.toString();
   }
 
-  Future<void> _downloadReport(_FyRange r, List<CustomerOrder> orders) async {
+  Future<void> _downloadReport(FyRange r, List<CustomerOrder> orders) async {
     setState(() => _generating = true);
     try {
       final text = _buildReportText(r, orders);
@@ -149,7 +100,7 @@ class _TaxReportScreenState extends ConsumerState<TaxReportScreen> {
     final tr = ref.watch(trProvider);
     final allOrders = ref.watch(ordersProvider);
     final range = _range;
-    final orders = _ordersInRange(allOrders, range);
+    final orders = ordersInFyRange(allOrders, range);
     final total = orders.fold<double>(0, (sum, o) => sum + o.total);
     final user = ref.watch(userProvider);
 

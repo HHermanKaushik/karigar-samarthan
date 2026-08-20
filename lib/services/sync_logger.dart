@@ -3,18 +3,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 
-/// Central place to record failures from backend sync operations
-/// (WooCommerce, WordPress media, Firestore profile sync, etc.)
-///
-/// Every failure is:
-///  1. Printed to the console (useful in dev)
-///  2. Sent to Firebase Crashlytics as a non-fatal error (alerting)
-///  3. Written to the `sync_errors` Firestore collection (queryable log
-///     for support/engineering to triage without needing device logs)
-///
-/// All of this is best-effort: if Crashlytics or Firestore themselves
-/// fail (e.g. no network), logging never throws and never blocks the
-/// calling operation.
+/// Records failures from backend sync operations (WooCommerce, WordPress
+/// media, Firestore profile sync). Logs to console, Crashlytics (non-fatal),
+/// and the `sync_errors` Firestore collection. Best-effort - never throws,
+/// never blocks the caller.
 class SyncLogger {
   Future<void> logError(
     String operation,

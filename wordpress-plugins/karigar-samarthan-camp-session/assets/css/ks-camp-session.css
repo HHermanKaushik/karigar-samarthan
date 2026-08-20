@@ -1,0 +1,173 @@
+/* Styles for the [ks_camp_entry] offline camp-entry flow. All classes
+   prefixed kscamp- so this plugin's CSS can never collide with the
+   separate Volunteer Entry plugin's stylesheet, even if both are active
+   on the same page at once. */
+
+.kscamp-root {
+  max-width: 480px;
+  margin: 0 auto;
+  font-size: 16px;
+}
+
+.kscamp-root .kscamp-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.kscamp-root h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.kscamp-root h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.kscamp-root .kscamp-hint {
+  color: #666;
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+
+.kscamp-root form label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+.kscamp-root form input[type="text"],
+.kscamp-root form input[type="number"],
+.kscamp-root form input[type="file"] {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  font-size: 16px; /* prevents iOS auto-zoom on focus */
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.kscamp-btn-primary {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: #2c4270;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.kscamp-btn-primary:active { background: #24365c; }
+
+.kscamp-btn-secondary {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c4270;
+  background: #eef1f7;
+  border: 1px solid #c7d0e2;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.kscamp-btn-link {
+  background: none;
+  border: none;
+  color: #2c4270;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.kscamp-session-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.kscamp-karigar-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.kscamp-karigar-row-name { font-weight: 700; }
+.kscamp-karigar-row-meta { font-size: 13px; color: #666; margin-top: 2px; }
+
+.kscamp-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.kscamp-pill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.kscamp-pill-pending { background: #f0f0f0; color: #666; }
+.kscamp-pill-syncing { background: #fff3cd; color: #8a6500; }
+.kscamp-pill-synced  { background: #dff3e0; color: #206b2f; }
+.kscamp-pill-failed  { background: #fbe0e2; color: #a3283a; }
+
+.kscamp-queue-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #444;
+}
+
+.kscamp-conn-indicator {
+  font-size: 12px;
+  font-weight: 600;
+}
+.kscamp-conn-online  { color: #206b2f; }
+.kscamp-conn-offline { color: #a3283a; }
+
+.kscamp-error {
+  color: #a3283a;
+  background: #fbe0e2;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.kscamp-loading {
+  color: #888;
+  text-align: center;
+  padding: 20px;
+}

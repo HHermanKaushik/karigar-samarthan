@@ -14,17 +14,12 @@ class SttResult {
   const SttResult({required this.transcript, this.languageCode});
 }
 
-/// Thin wrapper around Sarvam AI's Speech-to-Text and Text-to-Speech REST
-/// APIs (https://api.sarvam.ai).
+/// Thin wrapper around Sarvam AI's STT/TTS REST APIs (https://api.sarvam.ai).
 ///
-/// - STT: POST /speech-to-text (multipart, model `saaras:v3`, mode `transcribe`)
-/// - TTS: POST /text-to-speech (JSON, model `bulbul:v3`) — returns
-///   base64-encoded WAV audio.
+/// - STT: POST /speech-to-text (multipart, model `saaras:v3`)
+/// - TTS: POST /text-to-speech (JSON, model `bulbul:v3`) - base64 WAV
 ///
 /// Auth: `api-subscription-key` header, read from SARVAM_API_KEY in .env.
-///
-/// Text translation (`/translate`) isn't used yet, but can be added here
-/// following the same pattern when needed.
 class SarvamService {
   final Dio _dio;
   final SyncLogger _logger;
@@ -42,11 +37,8 @@ class SarvamService {
 
   String get _apiKey => dotenv.env['SARVAM_API_KEY'] ?? '';
 
-  /// Transcribes [audioFile] (recorded by the device mic) into text.
-  ///
-  /// [languageCode] should be a Sarvam BCP-47 code (e.g. `hi-IN`) — see
-  /// [AppLanguage.sarvamCode]. Returns `null` on failure (logged via
-  /// [SyncLogger]).
+  /// Transcribes [audioFile] into text. [languageCode] is a Sarvam BCP-47
+  /// code (see [AppLanguage.sarvamCode]). Returns `null` on failure.
   Future<SttResult?> speechToText({
     required File audioFile,
     required String languageCode,
@@ -97,10 +89,9 @@ class SarvamService {
     }
   }
 
-  /// Translates [text] from [sourceLanguageCode] to [targetLanguageCode].
-  /// Returns the translated string, or `null` on failure.
-  /// Use this for dynamic content (product descriptions, error messages, etc.).
-  /// For static UI strings use [AppStrings.t] via the trProvider instead.
+  /// Translates [text] from [sourceLanguageCode] to [targetLanguageCode],
+  /// or `null` on failure. For dynamic content only - static UI strings
+  /// use [AppStrings.t] via trProvider.
   Future<String?> translateText({
     required String text,
     required String targetLanguageCode,
@@ -137,12 +128,9 @@ class SarvamService {
     }
   }
 
-  /// Converts [text] into speech and returns WAV audio bytes, or `null` on
-  /// failure.
-  ///
-  /// [languageCode] should be a Sarvam BCP-47 code (e.g. `hi-IN`) — see
-  /// [AppLanguage.sarvamCode]. [pace] is bulbul:v3's speed control, 0.5
-  /// (slowest) to 2.0 (fastest), 1.0 = normal.
+  /// Converts [text] to WAV audio bytes, or `null` on failure.
+  /// [languageCode] is a Sarvam BCP-47 code. [pace] is bulbul:v3's speed,
+  /// 0.5-2.0, 1.0 = normal.
   Future<Uint8List?> textToSpeech({
     required String text,
     required String languageCode,
@@ -177,8 +165,7 @@ class SarvamService {
         options: Options(headers: {'api-subscription-key': _apiKey}),
       );
 
-      // Sarvam may return data as a String if the server sends
-      // Content-Type: text/plain — decode it ourselves in that case.
+      // Sarvam sometimes sends text/plain instead of JSON - decode manually.
       final raw = response.data;
       final Map<String, dynamic>? body = raw is Map
           ? raw.cast()

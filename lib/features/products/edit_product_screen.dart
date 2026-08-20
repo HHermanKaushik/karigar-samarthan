@@ -44,13 +44,10 @@ class _State extends ConsumerState<EditProductScreen> {
       TextEditingController(text: widget.product.quantity.toString());
   late final TextEditingController _desc;
 
-  // Newly picked photos this session, additive alongside _existingImages -
-  // adding a photo no longer replaces what was already there.
+  // Newly picked photos, additive alongside _existingImages.
   final List<File> _images = [];
 
-  // The product's pre-existing photos that are still being kept (removing
-  // one via the X button splices it out of this list, same as _removeImage
-  // does for _images).
+  // Pre-existing photos still being kept - the X button splices one out.
   late final List<_ExistingImage> _existingImages;
 
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -61,10 +58,8 @@ class _State extends ConsumerState<EditProductScreen> {
   @override
   void initState() {
     super.initState();
-    // Prefer the karigar's own words if this product was captured in the
-    // app's current language - otherwise fall back to the English text
-    // (e.g. a product added while the app was in a different language, or
-    // an older product from before this was tracked at all).
+    // Prefer the karigar's own words if captured in the current language,
+    // else fall back to English.
     final langCode = ref.read(languageProvider).code;
     _title = TextEditingController(text: widget.product.displayTitle(langCode));
     _category =
@@ -72,10 +67,8 @@ class _State extends ConsumerState<EditProductScreen> {
     _desc = TextEditingController(
         text: widget.product.displayDescription(langCode));
 
-    // Reconciles local file paths with WooCommerce URLs by position - both
-    // lists are populated together, in the same order, at add/edit time.
-    // wooImageUrl (singular) is the pre-multi-image fallback for products
-    // saved before wooImageUrls existed.
+    // Reconciles local file paths with WooCommerce URLs by position.
+    // wooImageUrl (singular) is the fallback for pre-multi-image products.
     final urls = widget.product.wooImageUrls.isNotEmpty
         ? widget.product.wooImageUrls
         : (widget.product.wooImageUrl != null
@@ -98,12 +91,9 @@ class _State extends ConsumerState<EditProductScreen> {
         .addPostFrameCallback((_) => _liveTranslateFieldsIfNeeded());
   }
 
-  // The fast path above (displayTitle/displayCategory/displayDescription)
-  // only shows the karigar's own words when this exact product was last
-  // saved in the app's current language. Every other case - a product made
-  // in a different language, or one from before local* was tracked at all -
-  // needs an actual live translation of the canonical English text, same as
-  // the Home screen tiles (see product_translation_provider.dart).
+  // The fast path (displayTitle/displayCategory/displayDescription) only
+  // covers the current-language case; everything else needs a live
+  // translation, same as the Home screen tiles.
   Future<void> _liveTranslateFieldsIfNeeded() async {
     final lang = ref.read(languageProvider);
     if (lang.code == 'en') return;
@@ -127,8 +117,7 @@ class _State extends ConsumerState<EditProductScreen> {
       );
       if (!mounted) return;
       final translated = ref.read(productTranslationCacheProvider)[key];
-      // Only overwrite if the karigar hasn't already started editing this
-      // field while the translation was in flight.
+      // Don't overwrite if the karigar already started editing this field.
       if (translated != null && controller.text == before) {
         controller.text = translated;
       }
@@ -158,9 +147,7 @@ class _State extends ConsumerState<EditProductScreen> {
     if (_saving) return;
     setState(() => _saving = true);
 
-    // Listings must always be stored/published in English, regardless of
-    // which language the karigar used to edit them (voice/typed) — the
-    // storefront and other karigars/shoppers all expect English text.
+    // Listings always publish in English regardless of edit language.
     final lang = ref.read(languageProvider);
     final sarvam = ref.read(sarvamServiceProvider);
     Future<String> toEnglish(String text) async {
@@ -177,8 +164,7 @@ class _State extends ConsumerState<EditProductScreen> {
       title: await toEnglish(_title.text.trim()),
       category: await toEnglish(_category.text.trim()),
       description: await toEnglish(_desc.text.trim()),
-      // Keeps the karigar's own words viewable in-app when they're back on
-      // this same language - see Product.displayTitle() and friends.
+      // Keeps the karigar's own words viewable when back on this language.
       localTitle: lang.code != 'en' ? _title.text.trim() : '',
       localCategory: lang.code != 'en' ? _category.text.trim() : '',
       localDescription: lang.code != 'en' ? _desc.text.trim() : '',
@@ -287,12 +273,8 @@ class _State extends ConsumerState<EditProductScreen> {
 
   void _removeImage(int index) => setState(() => _images.removeAt(index));
 
-  /// One tile in the combined photo gallery, for either an existing photo
-  /// (local file first, falling back to the WooCommerce URL if the local
-  /// file is gone, e.g. after a reinstall - same fallback chain used for
-  /// thumbnails on the home screen) or a newly picked one. Multiple
-  /// existing/new photos can coexist and are each individually removable -
-  /// adding a photo no longer replaces what was already there.
+  /// One tile in the combined photo gallery - an existing photo (local
+  /// file first, WooCommerce URL fallback) or a newly picked one.
   Widget _buildGalleryTile({
     required Widget image,
     required VoidCallback onRemove,

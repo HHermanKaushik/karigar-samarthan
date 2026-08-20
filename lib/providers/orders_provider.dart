@@ -80,8 +80,8 @@ class OrdersNotifier extends StateNotifier<List<CustomerOrder>> {
               price: (li['price'] as num?)?.toDouble() ?? 0,
             );
           }).toList()
-        // Orders synced before lineItems existed in Firestore - fall back
-        // to a single-item list built from the legacy flat fields.
+        // Fall back to legacy flat fields for orders synced before
+        // lineItems existed.
         : [
             OrderLineItem(
               title: productTitle,

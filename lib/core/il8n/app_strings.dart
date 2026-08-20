@@ -159,7 +159,8 @@ class AppStrings {
       'hi': 'मात्रा',
       'mr': 'प्रमाण',
       'bn': 'পরিমাণ',
-      'ta': 'அளவு',
+      // 'அளவு' read as "size" not "quantity" in testing - 'எண்ணிக்கை' (count) is unambiguous.
+      'ta': 'எண்ணிக்கை',
     },
     // ── Profile ───────────────────────────────────────────────────────────
     'myAccount': {
@@ -315,7 +316,8 @@ class AppStrings {
       'hi': 'उपलब्ध मात्रा',
       'mr': 'उपलब्ध प्रमाण',
       'bn': 'উপলব্ধ পরিমাণ',
-      'ta': 'கிடைக்கும் அளவு',
+      // same fix as 'qty' above
+      'ta': 'கிடைக்கும் எண்ணிக்கை',
     },
     'aiProcessing': {
       'en': 'AI is preparing your listing...',
@@ -798,7 +800,8 @@ class AppStrings {
       'hi': 'मात्रा',
       'mr': 'प्रमाण',
       'bn': 'পরিমাণ',
-      'ta': 'அளவு',
+      // same fix as 'qty' above
+      'ta': 'எண்ணிக்கை',
     },
     'paymentTotal': {
       'en': 'Payment Total',

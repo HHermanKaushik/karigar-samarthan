@@ -73,14 +73,8 @@ function ks_product_photos_pending($product_id) {
 }
 
 /**
- * Volunteer-submitted products auto-publish immediately and do NOT require
- * admin approval before going live - by design, so a volunteer's work in
- * the field is never blocked on someone else's availability. This was
- * previously enforced as a hard wp_die() gate on publish, but that gate
- * never actually fired (it checked _ks_entry_mode, which product-handler.php
- * never set, so ks_is_volunteer_product() was always false) - removed
- * outright rather than "fixed", since a working gate is not what's wanted
- * here. _ks_needs_review / _ks_images_pending remain as informational flags
- * only, surfaced in the admin Products list (see admin-ui.php) so staff can
- * see which live listings still need photos - they no longer block anything.
+ * Volunteer-submitted products auto-publish immediately, no admin approval
+ * gate - a volunteer's work in the field shouldn't wait on someone else's
+ * availability. _ks_needs_review / _ks_images_pending are informational
+ * only (see admin-ui.php), they don't block anything.
  */

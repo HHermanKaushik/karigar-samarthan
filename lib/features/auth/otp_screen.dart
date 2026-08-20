@@ -100,9 +100,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       }
     }
 
-    // A brand-new registration: no Firestore profile existed yet, but
-    // signup_screen.dart already cached one locally before sending the OTP -
-    // persist it now that the phone number is verified.
+    // New registration - signup_screen.dart cached a profile locally
+    // before sending the OTP; persist it now that the phone is verified.
     if (!hasProfile && widget.routingData.isRegistrationFlow) {
       final localProfileCache = ref.read(userProvider);
       if (localProfileCache.fullName.isNotEmpty) {
@@ -116,10 +115,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     setState(() => _loading = false);
 
     if (hasProfile) {
-      // UPI setup is intentionally NOT forced here - new sellers were
-      // interpreting a mandatory Payment Setup step as being asked to pay
-      // the app itself, rather than adding where THEY get paid. UPI ID can
-      // be added any time from Profile settings instead.
+      // UPI setup isn't forced here - testers read a mandatory Payment
+      // Setup step as the app asking them to pay. It's opt-in from Profile.
       context.go('/home');
     } else {
       if (!widget.routingData.isRegistrationFlow) {
